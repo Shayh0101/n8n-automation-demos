@@ -1,0 +1,764 @@
+{
+  "name": "RAG Chatbot over Company Docs (OpenAI + Qdrant)",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## RAG chatbot over company docs\nOne webhook, two actions:\n\n**Ingest** – `POST /webhook/rag-chatbot`\n```json\n{\"action\":\"ingest\",\"documents\":[{\"title\":\"Leave policy\",\"source\":\"https://wiki/hr\",\"text\":\"...\"}]}\n```\n**Ask** – `POST /webhook/rag-chatbot`\n```json\n{\"action\":\"ask\",\"question\":\"How many vacation days do I get?\"}\n```\nAnswer = text + cited sources. Re-ingesting a document with the same `title`/`id` replaces its old chunks.\n\nStack: OpenAI (embeddings + chat) · Qdrant (vector store).",
+        "height": 520,
+        "width": 620,
+        "color": 7
+      },
+      "id": "fe69842f-fb34-42c7-abe8-7ae9f73b6711",
+      "name": "Note: Overview",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -80,
+        -400
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## ⚙️ Setup (5 min)\n1. **Config** node → set `qdrantUrl` and `collection` (and models / chunk size if needed).\n2. Create the Qdrant collection once (size 1536 for `text-embedding-3-small`):\n```\ncurl -X PUT $QDRANT_URL/collections/company_docs \\\n  -H \"api-key: $QDRANT_API_KEY\" -H \"Content-Type: application/json\" \\\n  -d '{\"vectors\":{\"size\":1536,\"distance\":\"Cosine\"}}'\n```\n3. Credentials (none are shipped in this file):\n   - **OpenAI** credential → nodes *Embed Chunks*, *Embed Question*, *Call LLM*.\n   - **Header Auth** (`api-key: <QDRANT_API_KEY>`) → the 3 Qdrant nodes. Local Qdrant without key: set *Authentication* = None.\n4. Activate the workflow and call the production webhook URL.",
+        "height": 520,
+        "width": 560,
+        "color": 4
+      },
+      "id": "9f276921-9478-4b6e-a9e0-f89aca36fc96",
+      "name": "Note: Setup",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        560,
+        -400
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### 📥 Ingest branch\nChunk text (paragraph/sentence aware, overlap) → embed in one batch → delete old chunks of the same docs → upsert to Qdrant with deterministic ids.",
+        "height": 300,
+        "width": 1340,
+        "color": 5
+      },
+      "id": "d8429838-9aa0-4d6a-aff2-bb2db3d7db63",
+      "name": "Note: Ingest",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        860,
+        -60
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### 💬 Ask branch\nEmbed question → top-K search → drop hits below `minScore` → if nothing relevant: answer \"not found\" **without** calling the LLM, else answer strictly from context with [n] citations.",
+        "height": 420,
+        "width": 1560,
+        "color": 6
+      },
+      "id": "fbdb18ad-109c-48d2-aadb-b46b617b09fb",
+      "name": "Note: Ask",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        860,
+        280
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### ⚠️ Validation errors\nBad payloads (unknown action, empty question, missing text, wrong Config) return **HTTP 400** with a readable `error` message.",
+        "height": 220,
+        "width": 380,
+        "color": 3
+      },
+      "id": "e27b7650-243b-4819-ac8b-168ff8c15b76",
+      "name": "Note: Errors",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        860,
+        720
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "rag-chatbot",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "fa7c3723-8327-4f02-a4b4-aca1129d7a66",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        300
+      ],
+      "webhookId": "a59d12b1-5962-4766-a29c-d17088586096"
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "assignments": {
+          "assignments": [
+            {
+              "id": "3cecdaca-c88e-483e-a51d-cbef3ef94d27",
+              "name": "qdrantUrl",
+              "value": "http://localhost:6333",
+              "type": "string"
+            },
+            {
+              "id": "8a3f37a4-df02-4e22-a221-a20a46dc328c",
+              "name": "collection",
+              "value": "company_docs",
+              "type": "string"
+            },
+            {
+              "id": "07c07780-84b9-454a-a363-c3b032a49cc2",
+              "name": "embeddingModel",
+              "value": "text-embedding-3-small",
+              "type": "string"
+            },
+            {
+              "id": "dadf0752-f47a-4abe-ac44-d9e40e779f20",
+              "name": "chatModel",
+              "value": "gpt-4o-mini",
+              "type": "string"
+            },
+            {
+              "id": "b036f9c6-e7d9-497f-afba-8b8f4397ba57",
+              "name": "topK",
+              "value": 5,
+              "type": "number"
+            },
+            {
+              "id": "a23f77b9-b271-4267-a42b-141c63268f7a",
+              "name": "minScore",
+              "value": 0.3,
+              "type": "number"
+            },
+            {
+              "id": "e9950554-c386-4ffb-a461-970d78c37bba",
+              "name": "chunkSize",
+              "value": 1000,
+              "type": "number"
+            },
+            {
+              "id": "8b19d259-1c7c-4a0c-ac1d-6028ebd0b452",
+              "name": "chunkOverlap",
+              "value": 150,
+              "type": "number"
+            },
+            {
+              "id": "780a71bf-2807-42a8-ab97-95880f505c41",
+              "name": "maxContextChars",
+              "value": 12000,
+              "type": "number"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "5519f616-8214-4814-a84c-b830a4d00486",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        220,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Validate Request\n// Validates the webhook payload and merges it with the values from the \"Config\" node.\n// Output: one item with { action: 'ingest' | 'ask' | 'invalid', ...config, ...payload }.\n// Invalid requests are NOT thrown — they are routed to the \"Respond: Error\" node (HTTP 400).\n\nconst MAX_DOCUMENTS = 100;\nconst MAX_DOC_CHARS = 200000;\nconst MAX_QUESTION_CHARS = 2000;\n\nconst item = $input.first().json;\nconst body = item.body && typeof item.body === 'object' && !Array.isArray(item.body) ? item.body : {};\n\nconst toNumber = (value, fallback) => {\n  const n = Number(value);\n  return Number.isFinite(n) ? n : fallback;\n};\nconst clamp = (n, min, max) => Math.min(max, Math.max(min, n));\n\nconst config = {\n  qdrantUrl: String(item.qdrantUrl || '').trim().replace(/\\/+$/, ''),\n  collection: String(item.collection || '').trim(),\n  embeddingModel: String(item.embeddingModel || 'text-embedding-3-small'),\n  chatModel: String(item.chatModel || 'gpt-4o-mini'),\n  topK: clamp(Math.round(toNumber(item.topK, 5)), 1, 20),\n  minScore: clamp(toNumber(item.minScore, 0.3), 0, 1),\n  chunkSize: clamp(Math.round(toNumber(item.chunkSize, 1000)), 200, 8000),\n  chunkOverlap: Math.max(0, Math.round(toNumber(item.chunkOverlap, 150))),\n  maxContextChars: clamp(Math.round(toNumber(item.maxContextChars, 12000)), 1000, 100000),\n};\n// Overlap must be clearly smaller than the chunk, otherwise chunking would not progress.\nconfig.chunkOverlap = Math.min(config.chunkOverlap, Math.floor(config.chunkSize / 2));\n\nconst errors = [];\nif (!/^https?:\\/\\//.test(config.qdrantUrl)) errors.push('Config: qdrantUrl must start with http:// or https://');\nif (!/^[A-Za-z0-9_-]+$/.test(config.collection)) errors.push('Config: collection must contain only letters, digits, \"_\" or \"-\"');\n\nconst action = String(body.action || '').trim().toLowerCase();\nconst out = { ...config, action };\n\nif (action === 'ingest') {\n  const docs = body.documents;\n  if (!Array.isArray(docs) || docs.length === 0) {\n    errors.push('\"documents\" must be a non-empty array');\n  } else if (docs.length > MAX_DOCUMENTS) {\n    errors.push(`Too many documents in one request (max ${MAX_DOCUMENTS})`);\n  } else {\n    out.documents = [];\n    docs.forEach((doc, i) => {\n      if (!doc || typeof doc !== 'object') return errors.push(`documents[${i}] must be an object`);\n      const text = typeof doc.text === 'string' ? doc.text.trim() : '';\n      if (!text) return errors.push(`documents[${i}].text must be a non-empty string`);\n      if (text.length > MAX_DOC_CHARS) return errors.push(`documents[${i}].text is longer than ${MAX_DOC_CHARS} chars`);\n      const title = String(doc.title || `Document ${i + 1}`).trim();\n      const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || `doc-${i + 1}`;\n      out.documents.push({\n        id: String(doc.id || slug),\n        title,\n        source: doc.source ? String(doc.source) : null,\n        metadata: doc.metadata && typeof doc.metadata === 'object' ? doc.metadata : {},\n        text,\n      });\n    });\n  }\n} else if (action === 'ask') {\n  const question = typeof body.question === 'string' ? body.question.trim() : '';\n  if (!question) errors.push('\"question\" must be a non-empty string');\n  else if (question.length > MAX_QUESTION_CHARS) errors.push(`\"question\" is longer than ${MAX_QUESTION_CHARS} chars`);\n  out.question = question;\n  if (body.topK !== undefined) out.topK = clamp(Math.round(toNumber(body.topK, config.topK)), 1, 20);\n} else {\n  errors.push('\"action\" must be \"ingest\" or \"ask\"');\n}\n\nif (errors.length) {\n  return [{ json: { action: 'invalid', statusCode: 400, error: errors.join('; ') } }];\n}\nreturn [{ json: out }];\n"
+      },
+      "id": "154b8839-00e3-4025-a6ae-f52cb206261d",
+      "name": "Validate Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "260672e3-e4ac-4057-a582-278f74e92a3e",
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "ingest",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "ingest"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "56943162-ca17-4578-a8f0-52cd2f675e8c",
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "ask",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "ask"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra",
+          "renameFallbackOutput": "invalid"
+        }
+      },
+      "id": "54f09702-d01f-41e5-ae76-66a5686fbfc2",
+      "name": "Route by Action",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [
+        660,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Chunk Documents\n// Splits every document into overlapping chunks (paragraph > sentence > word boundaries)\n// and gives each chunk a deterministic UUID, so re-ingesting a document overwrites it.\n\nconst MAX_CHUNKS = 2000; // one embeddings request; OpenAI accepts up to 2048 inputs\n\nconst cfg = $input.first().json;\nconst size = cfg.chunkSize;\nconst overlap = cfg.chunkOverlap;\n\nfunction normalize(text) {\n  return text\n    .replace(/\\r\\n?/g, '\\n')\n    .replace(/[ \\t\\f\\v]+/g, ' ')\n    .replace(/ ?\\n ?/g, '\\n')\n    .replace(/\\n{3,}/g, '\\n\\n')\n    .trim();\n}\n\nfunction chunkText(text) {\n  const clean = normalize(text);\n  if (clean.length <= size) return clean ? [clean] : [];\n  const chunks = [];\n  let start = 0;\n  while (start < clean.length) {\n    let end = Math.min(start + size, clean.length);\n    if (end < clean.length) {\n      // Cut at the \"nicest\" boundary found in the second half of the window.\n      const windowText = clean.slice(start, end);\n      const minCut = Math.floor(size * 0.5);\n      for (const sep of ['\\n\\n', '\\n', '. ', '? ', '! ', ' ']) {\n        const idx = windowText.lastIndexOf(sep);\n        if (idx >= minCut) { end = start + idx + sep.length; break; }\n      }\n    }\n    const piece = clean.slice(start, end).trim();\n    if (piece) chunks.push(piece);\n    if (end >= clean.length) break;\n    // Step back by `overlap` chars, snapped forward to the next word start.\n    let next = end - overlap;\n    if (overlap > 0) {\n      const space = clean.indexOf(' ', next);\n      if (space !== -1 && space < end) next = space + 1;\n    }\n    start = Math.max(next, start + 1);\n  }\n  return chunks;\n}\n\n// FNV-1a 32-bit hash; four seeded rounds give 128 bits formatted as a UUID (Qdrant point id).\nfunction fnv1a(str, seed) {\n  let h = 0x811c9dc5 ^ seed;\n  for (let i = 0; i < str.length; i++) {\n    h ^= str.charCodeAt(i);\n    h = Math.imul(h, 0x01000193) >>> 0;\n  }\n  return h >>> 0;\n}\nfunction uuidFrom(str) {\n  const hex = [1, 2, 3, 4].map((s) => fnv1a(str, s * 0x9e3779b1).toString(16).padStart(8, '0')).join('');\n  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;\n}\n\nconst chunks = [];\nfor (const doc of cfg.documents) {\n  chunkText(doc.text).forEach((text, chunkIndex) => {\n    chunks.push({\n      id: uuidFrom(`${doc.id}#${chunkIndex}`),\n      docId: doc.id,\n      title: doc.title,\n      source: doc.source,\n      metadata: doc.metadata,\n      chunkIndex,\n      text,\n    });\n  });\n}\n\nif (chunks.length === 0) throw new Error('No text to index after normalisation');\nif (chunks.length > MAX_CHUNKS) {\n  throw new Error(`Too many chunks (${chunks.length} > ${MAX_CHUNKS}). Send fewer documents per request or raise chunkSize.`);\n}\n\nreturn [{\n  json: {\n    qdrantUrl: cfg.qdrantUrl,\n    collection: cfg.collection,\n    embeddingModel: cfg.embeddingModel,\n    docIds: [...new Set(chunks.map((c) => c.docId))],\n    documentCount: cfg.documents.length,\n    chunkCount: chunks.length,\n    chunks,\n  },\n}];\n"
+      },
+      "id": "460bde4c-ff21-4f69-a280-b56f55008767",
+      "name": "Chunk Documents",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        900,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/embeddings",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "openAiApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: $('Chunk Documents').first().json.embeddingModel, input: $('Chunk Documents').first().json.chunks.map(c => c.text) }) }}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "03d34f68-9ee9-4305-a870-c0db1c9b9ae2",
+      "name": "Embed Chunks",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1120,
+        80
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build Qdrant Points\n// Pairs the OpenAI embeddings response with the chunks from \"Chunk Documents\"\n// and produces the body for Qdrant's PUT /collections/{name}/points.\n\nconst chunkData = $('Chunk Documents').first().json;\nconst response = $input.first().json;\n\nif (!response || !Array.isArray(response.data)) {\n  throw new Error('Embeddings response has no \"data\" array: ' + JSON.stringify(response).slice(0, 300));\n}\nconst chunks = chunkData.chunks;\nif (response.data.length !== chunks.length) {\n  throw new Error(`Got ${response.data.length} embeddings for ${chunks.length} chunks`);\n}\n\n// OpenAI returns an `index` per embedding — never rely on array order alone.\nconst vectors = [...response.data].sort((a, b) => a.index - b.index).map((d) => d.embedding);\nconst dim = vectors[0] && vectors[0].length;\nif (!dim || vectors.some((v) => !Array.isArray(v) || v.length !== dim)) {\n  throw new Error('Embeddings have missing or inconsistent dimensions');\n}\n\nconst ingestedAt = new Date().toISOString();\nconst points = chunks.map((chunk, i) => ({\n  id: chunk.id,\n  vector: vectors[i],\n  payload: {\n    text: chunk.text,\n    docId: chunk.docId,\n    title: chunk.title,\n    source: chunk.source,\n    chunkIndex: chunk.chunkIndex,\n    metadata: chunk.metadata,\n    ingestedAt,\n  },\n}));\n\nreturn [{\n  json: {\n    qdrantUrl: chunkData.qdrantUrl,\n    collection: chunkData.collection,\n    documentCount: chunkData.documentCount,\n    chunkCount: chunkData.chunkCount,\n    vectorSize: dim,\n    points,\n  },\n}];\n"
+      },
+      "id": "afe6750d-e136-4d2a-a5a5-3b34b4bb3cce",
+      "name": "Build Qdrant Points",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1340,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.qdrantUrl }}/collections/{{ $json.collection }}/points/delete?wait=true",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ filter: { must: [{ key: 'docId', match: { any: $('Chunk Documents').first().json.docIds } }] } }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "7c274f06-cb83-47a7-a8a6-67a1404b4f8a",
+      "name": "Delete Old Chunks",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1560,
+        80
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "={{ $('Build Qdrant Points').first().json.qdrantUrl }}/collections/{{ $('Build Qdrant Points').first().json.collection }}/points?wait=true",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ points: $('Build Qdrant Points').first().json.points }) }}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "b347dc0d-a193-4493-a17c-0583cccbe1e2",
+      "name": "Upsert to Qdrant",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1780,
+        80
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { status: 'ok', documents: $('Build Qdrant Points').first().json.documentCount, chunks: $('Build Qdrant Points').first().json.chunkCount, docIds: $('Chunk Documents').first().json.docIds, qdrant: $json.result ? $json.result.status : null } }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "d9db5958-9ed4-46a4-a7b3-dc6321c5c684",
+      "name": "Respond: Ingested",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        2000,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/embeddings",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "openAiApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: $json.embeddingModel, input: $json.question }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "8378f242-0723-4040-acbe-103c3c3fd797",
+      "name": "Embed Question",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        900,
+        440
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Validate Request').first().json.qdrantUrl }}/collections/{{ $('Validate Request').first().json.collection }}/points/search",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ vector: $json.data[0].embedding, limit: $('Validate Request').first().json.topK, with_payload: true }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "7190d60d-b0cb-44f5-a697-6f9c1fceb2ad",
+      "name": "Search Qdrant",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1120,
+        440
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build Prompt\n// Turns Qdrant search hits into a numbered context block and the chat messages for the LLM.\n// Hits below `minScore` are dropped; if nothing relevant is left, hasContext = false and the\n// workflow answers \"not found\" without calling the LLM (saves tokens, avoids hallucinations).\n\nconst req = $('Validate Request').first().json;\nconst hits = Array.isArray($input.first().json.result) ? $input.first().json.result : [];\n\nconst seen = new Set();\nconst sources = [];\nlet used = 0;\nfor (const hit of [...hits].sort((a, b) => b.score - a.score)) {\n  const p = hit.payload || {};\n  const text = typeof p.text === 'string' ? p.text.trim() : '';\n  if (!text || hit.score < req.minScore || seen.has(text)) continue;\n  if (used + text.length > req.maxContextChars && sources.length > 0) break;\n  seen.add(text);\n  used += text.length;\n  sources.push({\n    n: sources.length + 1,\n    title: p.title || 'Untitled',\n    source: p.source || null,\n    docId: p.docId || null,\n    chunkIndex: p.chunkIndex ?? null,\n    score: Math.round(hit.score * 1000) / 1000,\n    text,\n  });\n}\n\nconst systemPrompt = [\n  'You are a helpful assistant that answers questions about the company using ONLY the provided context.',\n  'Rules:',\n  '- If the answer is not in the context, say you could not find it in the company documents. Do not guess.',\n  '- Cite the sources you used with their number in square brackets, e.g. [1] or [2][3].',\n  '- Be concise and answer in the same language as the question.',\n].join('\\n');\n\nconst context = sources.map((s) => `[${s.n}] ${s.title}${s.source ? ` (${s.source})` : ''}\\n${s.text}`).join('\\n\\n---\\n\\n');\n\nreturn [{\n  json: {\n    hasContext: sources.length > 0,\n    question: req.question,\n    chatModel: req.chatModel,\n    sources,\n    messages: [\n      { role: 'system', content: systemPrompt },\n      { role: 'user', content: `Context:\\n${context}\\n\\nQuestion: ${req.question}` },\n    ],\n  },\n}];\n"
+      },
+      "id": "8e4cfac1-b876-4b95-afe9-cfca96edd613",
+      "name": "Build Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1340,
+        440
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "307ef7b0-5430-4056-a4ec-38b67d56737f",
+              "leftValue": "={{ $json.hasContext }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "090c22ab-9b2f-4c93-af48-ae7d7fbc7634",
+      "name": "Has Context?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1560,
+        440
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "openAiApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: $json.chatModel, temperature: 0.1, messages: $json.messages }) }}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "9c21785f-ee3c-4a40-a014-4bd7bdd6b8fc",
+      "name": "Call LLM",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1780,
+        360
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "jsCode": "// Format Answer\n// Extracts the LLM answer and keeps only the sources it actually cited ([n]).\n\nconst prompt = $('Build Prompt').first().json;\nconst completion = $input.first().json;\n\nconst content = completion && completion.choices && completion.choices[0] && completion.choices[0].message\n  ? String(completion.choices[0].message.content || '').trim()\n  : '';\nif (!content) {\n  throw new Error('LLM returned an empty answer: ' + JSON.stringify(completion).slice(0, 300));\n}\n\nconst cited = new Set();\nfor (const m of content.matchAll(/\\[(\\d{1,3})\\]/g)) cited.add(Number(m[1]));\nconst citedSources = prompt.sources.filter((s) => cited.has(s.n));\n\nreturn [{\n  json: {\n    answer: content,\n    grounded: citedSources.length > 0,\n    // Fall back to all retrieved sources when the model forgot to cite.\n    sources: (citedSources.length ? citedSources : prompt.sources).map(({ text, ...meta }) => ({\n      ...meta,\n      snippet: text.length > 240 ? text.slice(0, 240) + '…' : text,\n    })),\n    model: completion.model || prompt.chatModel,\n    usage: completion.usage || null,\n  },\n}];\n"
+      },
+      "id": "53e4657a-477c-4001-a026-5fe003e487cf",
+      "name": "Format Answer",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2000,
+        360
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// No Context Answer\n// Returned when vector search found nothing above minScore — the LLM is not called.\n\nconst prompt = $input.first().json;\n\nreturn [{\n  json: {\n    answer: \"I couldn't find information about this in the company documents. Please rephrase the question or contact the responsible team.\",\n    grounded: false,\n    sources: [],\n    question: prompt.question,\n  },\n}];\n"
+      },
+      "id": "35b9260a-5856-4de1-a030-1075897d5742",
+      "name": "No Context Answer",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1780,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "81966d1c-54bb-401d-a0ff-7f5b6af184aa",
+      "name": "Respond: Answer",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        2220,
+        440
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { status: 'error', error: $json.error } }}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "id": "7e948cc0-97f5-4740-a09b-5490af53e9bb",
+      "name": "Respond: Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        900,
+        800
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Validate Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Request": {
+      "main": [
+        [
+          {
+            "node": "Route by Action",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route by Action": {
+      "main": [
+        [
+          {
+            "node": "Chunk Documents",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Embed Question",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond: Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chunk Documents": {
+      "main": [
+        [
+          {
+            "node": "Embed Chunks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embed Chunks": {
+      "main": [
+        [
+          {
+            "node": "Build Qdrant Points",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Qdrant Points": {
+      "main": [
+        [
+          {
+            "node": "Delete Old Chunks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete Old Chunks": {
+      "main": [
+        [
+          {
+            "node": "Upsert to Qdrant",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upsert to Qdrant": {
+      "main": [
+        [
+          {
+            "node": "Respond: Ingested",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embed Question": {
+      "main": [
+        [
+          {
+            "node": "Search Qdrant",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search Qdrant": {
+      "main": [
+        [
+          {
+            "node": "Build Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Prompt": {
+      "main": [
+        [
+          {
+            "node": "Has Context?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Context?": {
+      "main": [
+        [
+          {
+            "node": "Call LLM",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No Context Answer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call LLM": {
+      "main": [
+        [
+          {
+            "node": "Format Answer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Answer": {
+      "main": [
+        [
+          {
+            "node": "Respond: Answer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "No Context Answer": {
+      "main": [
+        [
+          {
+            "node": "Respond: Answer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "versionId": "5b2921b2-7173-4a03-a5ad-073e192389aa",
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": []
+}

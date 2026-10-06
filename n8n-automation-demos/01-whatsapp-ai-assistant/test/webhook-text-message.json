@@ -1,0 +1,25 @@
+{
+  "headers": { "content-type": "application/json" },
+  "params": {},
+  "query": {},
+  "body": {
+    "object": "whatsapp_business_account",
+    "entry": [{
+      "id": "WABA_ID_TEST",
+      "changes": [{
+        "field": "messages",
+        "value": {
+          "messaging_product": "whatsapp",
+          "metadata": { "display_phone_number": "15550000000", "phone_number_id": "PHONE_NUMBER_ID_TEST" },
+          "contacts": [{ "profile": { "name": "Jane Doe" }, "wa_id": "15551234567" }],
+          "messages": [
+            { "from": "15551234567", "id": "wamid.TEXT1", "timestamp": "1730000000", "type": "text", "text": { "body": "Hi! Where is my order #1042?" } },
+            { "from": "15551234567", "id": "wamid.BTN1", "timestamp": "1730000001", "type": "interactive", "interactive": { "type": "button_reply", "button_reply": { "id": "track", "title": "Track order" } } },
+            { "from": "15551234567", "id": "wamid.IMG1", "timestamp": "1730000002", "type": "image", "image": { "id": "MEDIA1", "caption": "Broken item" } },
+            { "from": "15551234567", "id": "wamid.REACT1", "timestamp": "1730000003", "type": "reaction", "reaction": { "message_id": "wamid.X", "emoji": "👍" } }
+          ]
+        }
+      }]
+    }]
+  }
+}

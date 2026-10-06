@@ -1,0 +1,18 @@
+[
+  {
+    "name": "Workflow structure: unique names/ids, valid connections, single trigger, v1 order",
+    "passed": true
+  },
+  {
+    "name": "Build AI Request: builds Claude request for text PDF, flags scanned PDF",
+    "passed": true
+  },
+  {
+    "name": "Parse & Validate: normalises values and assigns OK / NEEDS_REVIEW / ERROR",
+    "passed": true
+  },
+  {
+    "name": "End-to-end (mocked Claude): Build -> IF -> Claude mock -> Parse / Flag Unreadable",
+    "passed": true
+  }
+]

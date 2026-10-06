@@ -1,0 +1,15 @@
+{
+  "name": "n8n-rag-chatbot-company-docs",
+  "version": "1.0.0",
+  "description": "n8n template: RAG chatbot over company documents (OpenAI + Qdrant)",
+  "private": true,
+  "scripts": {
+    "build": "node scripts/build-workflow.js",
+    "test": "node validate.js",
+    "validate": "node validate.js --no-tests"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT"
+}

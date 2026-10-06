@@ -1,0 +1,6 @@
+{
+  "headers": {},
+  "params": {},
+  "body": {},
+  "query": { "hub.mode": "subscribe", "hub.verify_token": "test-verify-token", "hub.challenge": "1158201444" }
+}

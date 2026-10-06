@@ -1,0 +1,6 @@
+{
+  "target_url": "https://books.toscrape.com/catalogue/page-1.html",
+  "source_name": "books.toscrape.com",
+  "default_currency": "USD",
+  "max_invalid_ratio": 0.2
+}

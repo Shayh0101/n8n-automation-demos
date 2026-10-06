@@ -1,0 +1,11 @@
+{
+  "name": "n8n-ai-pdf-extraction-to-google-sheets",
+  "version": "1.0.0",
+  "private": true,
+  "description": "n8n template: AI (Claude) PDF/document data extraction into Google Sheets",
+  "scripts": {
+    "build": "node build.js",
+    "test": "node build.js && node validate.js"
+  },
+  "license": "MIT"
+}

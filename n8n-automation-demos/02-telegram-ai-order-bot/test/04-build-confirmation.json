@@ -1,0 +1,46 @@
+{
+  "name": "Customer confirmation after saving to Google Sheets (Sheets mocked)",
+  "node": "Build Confirmation",
+  "cases": [
+    {
+      "name": "confirmation lists items, total and contact details",
+      "input": [{ "Order ID": "ORD-20261004-ABCDE" }],
+      "nodes": {
+        "Parse AI Response": [{
+          "chatId": 111,
+          "isCompleteOrder": true,
+          "order": {
+            "orderId": "ORD-20261004-ABCDE",
+            "items": [{ "product": "Margherita Pizza", "quantity": 2, "unitPrice": 9.5, "lineTotal": 19 }],
+            "customerName": "John Doe", "phone": "+15551234567", "address": "5 Main St", "notes": "",
+            "total": 19, "currency": "EUR"
+          }
+        }]
+      },
+      "expect": [{
+        "chatId": 111,
+        "orderId": "ORD-20261004-ABCDE",
+        "reply": "re:Order ORD-20261004-ABCDE received.*2 x Margherita Pizza — 19\\.00 EUR.*Total: 19\\.00 EUR.*Name: John Doe.*Address: 5 Main St"
+      }]
+    },
+    {
+      "name": "Sheets append failed: apology reply, draft restored for retry",
+      "input": [{ "error": "The caller does not have permission" }],
+      "staticData": { "drafts": {} },
+      "nodes": {
+        "Parse AI Response": [{
+          "chatId": 111,
+          "isCompleteOrder": true,
+          "order": {
+            "orderId": "ORD-20261004-ABCDE",
+            "items": [{ "product": "Margherita Pizza", "quantity": 2, "unitPrice": 9.5, "lineTotal": 19 }],
+            "customerName": "John Doe", "phone": "+15551234567", "address": "5 Main St", "notes": "",
+            "total": 19, "currency": "EUR"
+          }
+        }]
+      },
+      "expect": [{ "chatId": 111, "saveError": true, "reply": "re:could not save your order" }],
+      "expectStaticData": { "drafts": { "111": { "customerName": "John Doe", "address": "5 Main St", "items": [{ "product": "Margherita Pizza", "quantity": 2 }] } } }
+    }
+  ]
+}

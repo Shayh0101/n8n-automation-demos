@@ -1,0 +1,11 @@
+{
+  "name": "n8n-whatsapp-ai-assistant",
+  "version": "1.0.0",
+  "private": true,
+  "description": "n8n template: WhatsApp Business Cloud API -> AI assistant (Claude / OpenAI)",
+  "scripts": {
+    "build": "node build-workflow.js",
+    "test": "node validate.js"
+  },
+  "license": "MIT"
+}

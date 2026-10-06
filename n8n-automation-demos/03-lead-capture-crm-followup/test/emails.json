@@ -1,0 +1,32 @@
+[
+  {
+    "name": "HubSpot response -> record id + personalised email",
+    "context": {
+      "crmProvider": "hubspot",
+      "lead": { "firstName": "Jane", "email": "jane@example.com", "message": "Need a quote" },
+      "config": { "companyName": "Acme Inc.", "fromEmail": "hello@acme.com", "bookingUrl": "https://cal.com/acme" }
+    },
+    "crmResponse": { "status": "COMPLETE", "results": [{ "id": "51", "properties": { "email": "jane@example.com" } }] },
+    "expect": { "to": "jane@example.com", "from": "hello@acme.com", "subject": "Thanks for reaching out, Jane!", "crmRecordId": "51", "htmlContains": ["Hi Jane", "Acme Inc.", "https://cal.com/acme", "Need a quote"] }
+  },
+  {
+    "name": "GoHighLevel response + HTML injection is escaped",
+    "context": {
+      "crmProvider": "gohighlevel",
+      "lead": { "firstName": "<script>alert(1)</script>", "email": "x@y.com", "message": "<b>hi</b> & bye" },
+      "config": { "companyName": "Acme" }
+    },
+    "crmResponse": { "new": true, "contact": { "id": "ghl_abc" } },
+    "expect": { "crmRecordId": "ghl_abc", "htmlContains": ["&lt;script&gt;", "&lt;b&gt;hi&lt;/b&gt; &amp; bye"], "htmlNotContains": ["<script>", "<b>hi</b>", "Book a call"] }
+  },
+  {
+    "name": "Airtable response, no first name -> generic greeting",
+    "context": {
+      "crmProvider": "airtable",
+      "lead": { "firstName": "", "email": "ana@shop.com", "message": "" },
+      "config": {}
+    },
+    "crmResponse": { "records": [{ "id": "recXYZ", "fields": {} }], "createdRecords": ["recXYZ"] },
+    "expect": { "crmRecordId": "recXYZ", "subject": "Thanks for reaching out, there!", "htmlContains": ["Hi there", "Our team"], "htmlNotContains": ["blockquote"] }
+  }
+]

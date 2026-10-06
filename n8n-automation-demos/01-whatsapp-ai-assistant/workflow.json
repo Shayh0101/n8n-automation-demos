@@ -1,0 +1,592 @@
+{
+  "name": "WhatsApp Business API → AI Assistant (Claude / OpenAI)",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## WhatsApp Business API → AI Assistant\n\nAnswers incoming WhatsApp messages with Claude (Anthropic) or OpenAI.\n\n**Flow**\n1. Meta calls the webhook (GET = verification, POST = messages)\n2. POST is acknowledged with `200` immediately (Meta retries slow webhooks)\n3. Message is parsed (text, buttons, captions; status updates ignored)\n4. AI generates a reply (provider chosen in **Config**)\n5. Reply is sent back via the WhatsApp Cloud API\n\nIf the AI call fails, the customer gets the `fallbackReply` instead of silence.\n\n**Setup:** see the Step 1–4 notes ➜ and README.md",
+        "height": 640,
+        "width": 520,
+        "color": 7
+      },
+      "id": "5a28466f-abd1-44ea-ac02-df898493b756",
+      "name": "Note: Overview",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -560,
+        -420
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### Step 1 – Edit the Config node\n\n- `verifyToken` – any secret string; paste the same value in Meta → WhatsApp → Configuration → Webhook\n- `aiProvider` – `anthropic` or `openai`\n- model names, `systemPrompt`, `maxTokens`, `fallbackReply`\n\nNo API keys go here – keys live in n8n Credentials.",
+        "height": 300,
+        "width": 420,
+        "color": 6
+      },
+      "id": "a8cbf934-7da2-4040-ab9b-634f4fc4d5fd",
+      "name": "Note: Step 1 Config",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        -420
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### Step 2 – Connect Meta webhook\n\n1. Activate the workflow and copy the **Production URL** of *WhatsApp Webhook*\n2. Meta App → WhatsApp → Configuration → Webhook: paste URL + `verifyToken`, click *Verify and save*\n3. Subscribe to the **messages** field\n\nThe URL must be public HTTPS (n8n Cloud or a tunnel / reverse proxy).",
+        "height": 300,
+        "width": 520,
+        "color": 6
+      },
+      "id": "269c5486-fa0c-43e9-adfc-f7dd7c8a7094",
+      "name": "Note: Step 2 Meta",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -560,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### Step 3 – AI credentials (Header Auth)\n\n**Ask Claude** → new *Header Auth* credential:\n`Name: x-api-key`, `Value: <ANTHROPIC_API_KEY>`\n\n**Ask OpenAI** → new *Header Auth* credential:\n`Name: Authorization`, `Value: Bearer <OPENAI_API_KEY>`\n\nYou only need the one matching `aiProvider`.",
+        "height": 300,
+        "width": 440,
+        "color": 6
+      },
+      "id": "fe12020a-d36b-4d77-a53b-809b70991b1a",
+      "name": "Note: Step 3 AI",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1080,
+        -460
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### Step 4 – WhatsApp send credential\n\n**Send WhatsApp Reply** → new *Header Auth* credential:\n`Name: Authorization`, `Value: Bearer <WHATSAPP_ACCESS_TOKEN>`\n\nUse a permanent System User token with `whatsapp_business_messaging` permission.\nThe phone number ID is taken from the incoming webhook automatically.",
+        "height": 300,
+        "width": 420,
+        "color": 6
+      },
+      "id": "8cb88cc3-b207-4145-a595-5c5028e98fa6",
+      "name": "Note: Step 4 WhatsApp",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1760,
+        -460
+      ]
+    },
+    {
+      "parameters": {
+        "multipleMethods": true,
+        "httpMethod": [
+          "GET",
+          "POST"
+        ],
+        "path": "whatsapp-ai",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "5acffbfb-5d2b-4161-a029-0a071ccade0a",
+      "name": "WhatsApp Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -200,
+        0
+      ],
+      "webhookId": "56c51bee-35d4-4d92-a2e9-512968264eda"
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "assignments": {
+          "assignments": [
+            {
+              "id": "39da49f3-8f4a-4ea3-a932-d23db82cab5f",
+              "name": "config.verifyToken",
+              "value": "CHANGE_ME_verify_token",
+              "type": "string"
+            },
+            {
+              "id": "eea039da-6e4c-4ed2-afde-578ab00cc9f6",
+              "name": "config.aiProvider",
+              "value": "anthropic",
+              "type": "string"
+            },
+            {
+              "id": "c170ea8a-c86a-4b08-a12c-8c2ae0e78fd0",
+              "name": "config.anthropicModel",
+              "value": "claude-sonnet-5",
+              "type": "string"
+            },
+            {
+              "id": "b20cd97a-f030-471d-a1e3-79ec3f7de0b5",
+              "name": "config.openaiModel",
+              "value": "gpt-4o-mini",
+              "type": "string"
+            },
+            {
+              "id": "2b79f88d-3130-419b-ae8d-177f52f064ea",
+              "name": "config.maxTokens",
+              "value": 500,
+              "type": "number"
+            },
+            {
+              "id": "c32e45fd-9273-47a6-a517-f79ad4080477",
+              "name": "config.systemPrompt",
+              "value": "You are the friendly WhatsApp assistant of ACME Store. Answer questions about products, orders, shipping and returns. If you do not know the answer, say so and offer to connect the customer with a human.",
+              "type": "string"
+            },
+            {
+              "id": "bdfc7a97-b948-49c4-aa35-9c3da7b7212c",
+              "name": "config.fallbackReply",
+              "value": "Sorry, I could not process your message right now. A team member will get back to you soon.",
+              "type": "string"
+            },
+            {
+              "id": "5acb342f-5386-4b5c-ae13-07c8e1da23a0",
+              "name": "config.graphApiVersion",
+              "value": "v21.0",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "3596c7f8-afd2-42cb-ad67-da1a4f5532d8",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        40,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "bdf7e593-71d2-405e-a1f8-570a746cae59",
+              "leftValue": "={{ $json.query['hub.mode'] }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "exists",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "27564267-a0ba-4ddb-a3c8-cfd0cc8f25a9",
+      "name": "Is Verification Request?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        260,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Meta webhook verification handshake (GET request).\n// Meta calls: GET <webhook>?hub.mode=subscribe&hub.verify_token=...&hub.challenge=...\n// We must echo hub.challenge with HTTP 200 if the token matches, otherwise 403.\nreturn $input.all().map((item) => {\n  const query = item.json.query || {};\n  const expected = String((item.json.config || {}).verifyToken || '');\n  const received = String(query['hub.verify_token'] || '');\n\n  const ok =\n    query['hub.mode'] === 'subscribe' &&\n    expected.length > 0 &&\n    received === expected;\n\n  return {\n    json: ok\n      ? { statusCode: 200, body: String(query['hub.challenge'] ?? '') }\n      : { statusCode: 403, body: 'Verification failed' },\n  };\n});"
+      },
+      "id": "6cb7366f-5d40-4b2c-afcb-225f054497ba",
+      "name": "Handle Verification",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        500,
+        -160
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.body }}",
+        "options": {
+          "responseCode": "={{ $json.statusCode }}"
+        }
+      },
+      "id": "c4c8e52b-150a-44ba-adb2-2b88d989dc67",
+      "name": "Respond Verification",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        720,
+        -160
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "noData",
+        "options": {}
+      },
+      "id": "1798c255-5645-41f3-a38a-f39b6980f84e",
+      "name": "Acknowledge 200",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        500,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Turns a raw WhatsApp Cloud API webhook payload into one item per incoming\n// customer message. Status updates (sent/delivered/read), reactions and\n// unknown events produce no items, so the workflow simply stops for them.\n\n// Returns the text the AI should answer, or null to ignore the message.\nfunction extractText(msg) {\n  switch (msg.type) {\n    case 'text':\n      return msg.text?.body?.trim() || null;\n    case 'interactive':\n      return (\n        msg.interactive?.button_reply?.title ||\n        msg.interactive?.list_reply?.title ||\n        null\n      );\n    case 'button':\n      return msg.button?.text || null;\n    case 'image':\n    case 'video':\n    case 'document': {\n      const caption = msg[msg.type]?.caption?.trim();\n      const note = `[The customer sent a ${msg.type}. You cannot view attachments.]`;\n      return caption ? `${note} Caption: ${caption}` : note;\n    }\n    case 'audio':\n    case 'sticker':\n    case 'location':\n    case 'contacts':\n      return `[The customer sent a ${msg.type} message. You can only read text.]`;\n    default:\n      // reaction, system, unsupported, ...\n      return null;\n  }\n}\n\nconst results = [];\n\nfor (const item of $input.all()) {\n  const body = item.json.body || {};\n  if (body.object !== 'whatsapp_business_account') continue;\n\n  for (const entry of body.entry || []) {\n    for (const change of entry.changes || []) {\n      if (change.field !== 'messages') continue;\n      const value = change.value || {};\n      const contacts = value.contacts || [];\n\n      for (const msg of value.messages || []) {\n        const text = extractText(msg);\n        if (!text) continue;\n\n        const contact = contacts.find((c) => c.wa_id === msg.from) || contacts[0] || {};\n        results.push({\n          json: {\n            messageId: msg.id,\n            from: msg.from,\n            name: contact.profile?.name || '',\n            type: msg.type,\n            text,\n            timestamp: Number(msg.timestamp) || null,\n            phoneNumberId: value.metadata?.phone_number_id || '',\n            config: item.json.config || {},\n          },\n        });\n      }\n    }\n  }\n}\n\nreturn results;"
+      },
+      "id": "7374ddad-b6d8-43e6-a915-06aee56f1af0",
+      "name": "Parse WhatsApp Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Builds the request body for the selected AI provider (Claude or OpenAI).\n// All settings come from the \"Config\" node, carried along in item.json.config.\nconst SUPPORTED = ['anthropic', 'openai'];\nconst MAX_INPUT_CHARS = 4000;\n\nreturn $input.all().map((item) => {\n  const msg = item.json;\n  const cfg = msg.config || {};\n  const provider = String(cfg.aiProvider || 'anthropic').toLowerCase().trim();\n\n  if (!SUPPORTED.includes(provider)) {\n    throw new Error(`Unknown aiProvider \"${cfg.aiProvider}\". Use \"anthropic\" or \"openai\" in the Config node.`);\n  }\n\n  const maxTokens = Number(cfg.maxTokens) > 0 ? Number(cfg.maxTokens) : 500;\n  const system =\n    String(cfg.systemPrompt || 'You are a helpful customer support assistant.') +\n    (msg.name ? `\\nThe customer's WhatsApp name is \"${msg.name}\".` : '') +\n    '\\nReply in the same language as the customer. Keep answers short and suitable for WhatsApp.';\n  const userText = String(msg.text || '').slice(0, MAX_INPUT_CHARS);\n\n  const body =\n    provider === 'anthropic'\n      ? {\n          model: cfg.anthropicModel || 'claude-sonnet-5',\n          max_tokens: maxTokens,\n          system,\n          messages: [{ role: 'user', content: userText }],\n        }\n      : {\n          model: cfg.openaiModel || 'gpt-4o-mini',\n          max_tokens: maxTokens,\n          messages: [\n            { role: 'system', content: system },\n            { role: 'user', content: userText },\n          ],\n        };\n\n  return {\n    json: {\n      provider,\n      body,\n      // Context needed after the AI call to send the reply back.\n      context: {\n        from: msg.from,\n        messageId: msg.messageId,\n        phoneNumberId: msg.phoneNumberId,\n        graphApiVersion: cfg.graphApiVersion || 'v21.0',\n        fallbackReply:\n          cfg.fallbackReply || 'Sorry, I could not process your message right now. A team member will get back to you soon.',\n      },\n    },\n  };\n});"
+      },
+      "id": "d5768a08-35c1-4a90-a56f-cd1a2ec96d2d",
+      "name": "Build AI Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        940,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "0264ea82-4f00-4c65-a4a6-71cbfe608cad",
+                    "leftValue": "={{ $json.provider }}",
+                    "rightValue": "anthropic",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Claude"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "3a8377fd-f029-4afd-a766-0632f4b688f2",
+                    "leftValue": "={{ $json.provider }}",
+                    "rightValue": "openai",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "OpenAI"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "8ace2722-8746-4fad-ad81-4bf7bb5a5f6a",
+      "name": "Choose AI Provider",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        1160,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.body) }}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "6b5566f1-c2e9-412c-a277-9e859f137d6d",
+      "name": "Ask Claude",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1380,
+        20
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.body) }}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "94d4d326-0f48-48e5-a30d-5fbc9899f260",
+      "name": "Ask OpenAI",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1380,
+        220
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Normalises the Claude / OpenAI response into a WhatsApp text message.\n// If the AI call failed (the HTTP nodes continue on error), a friendly\n// fallback reply is sent instead, and the error is kept in `aiError`.\nconst WHATSAPP_MAX_CHARS = 4096;\n\nreturn $input.all().map((item, i) => {\n  const res = item.json || {};\n  const ctx = $('Build AI Request').itemMatching(i).json.context;\n\n  let reply = '';\n  let aiError = null;\n\n  if (res.error) {\n    aiError = typeof res.error === 'string' ? res.error : res.error.message || JSON.stringify(res.error);\n  } else if (Array.isArray(res.content)) {\n    // Anthropic Messages API\n    reply = res.content\n      .filter((block) => block.type === 'text')\n      .map((block) => block.text)\n      .join('\\n')\n      .trim();\n  } else if (Array.isArray(res.choices)) {\n    // OpenAI Chat Completions API\n    reply = String(res.choices[0]?.message?.content || '').trim();\n  }\n\n  if (!reply && !aiError) aiError = 'Empty AI response';\n  const usedFallback = !reply;\n  if (usedFallback) reply = ctx.fallbackReply;\n  if (reply.length > WHATSAPP_MAX_CHARS) reply = reply.slice(0, WHATSAPP_MAX_CHARS - 1) + '…';\n\n  return {\n    json: {\n      to: ctx.from,\n      phoneNumberId: ctx.phoneNumberId,\n      graphApiVersion: ctx.graphApiVersion,\n      replyText: reply,\n      usedFallback,\n      aiError,\n      whatsappPayload: {\n        messaging_product: 'whatsapp',\n        recipient_type: 'individual',\n        to: ctx.from,\n        type: 'text',\n        context: { message_id: ctx.messageId },\n        text: { preview_url: false, body: reply },\n      },\n    },\n  };\n});"
+      },
+      "id": "9223e67f-45f7-419d-a887-5ab3cdf857ad",
+      "name": "Extract AI Reply",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1600,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/{{ $json.graphApiVersion }}/{{ $json.phoneNumberId }}/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.whatsappPayload) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "f34241b0-c70f-4926-ab9f-bd55be8781ec",
+      "name": "Send WhatsApp Reply",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1820,
+        120
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "WhatsApp Webhook": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Is Verification Request?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Verification Request?": {
+      "main": [
+        [
+          {
+            "node": "Handle Verification",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Acknowledge 200",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Handle Verification": {
+      "main": [
+        [
+          {
+            "node": "Respond Verification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Acknowledge 200": {
+      "main": [
+        [
+          {
+            "node": "Parse WhatsApp Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse WhatsApp Message": {
+      "main": [
+        [
+          {
+            "node": "Build AI Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build AI Request": {
+      "main": [
+        [
+          {
+            "node": "Choose AI Provider",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Choose AI Provider": {
+      "main": [
+        [
+          {
+            "node": "Ask Claude",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Ask OpenAI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ask Claude": {
+      "main": [
+        [
+          {
+            "node": "Extract AI Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ask OpenAI": {
+      "main": [
+        [
+          {
+            "node": "Extract AI Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract AI Reply": {
+      "main": [
+        [
+          {
+            "node": "Send WhatsApp Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": []
+}

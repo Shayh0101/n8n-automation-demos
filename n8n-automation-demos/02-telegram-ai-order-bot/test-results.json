@@ -1,0 +1,62 @@
+[
+  {
+    "name": "structure: settings, unique names/ids, required fields",
+    "passed": true
+  },
+  {
+    "name": "structure: connections valid, single trigger, all nodes reachable",
+    "passed": true
+  },
+  {
+    "name": "structure: no credentials or secrets, sticky setup notes present",
+    "passed": true
+  },
+  {
+    "name": "structure: Code nodes compile",
+    "passed": true
+  },
+  {
+    "name": "Normalize Message: plain text goes to AI",
+    "passed": true
+  },
+  {
+    "name": "Normalize Message: /start replies with welcome + menu, no AI call",
+    "passed": true
+  },
+  {
+    "name": "Normalize Message: /cancel clears only this chat's draft",
+    "passed": true
+  },
+  {
+    "name": "Normalize Message: sticker gets a text-only reply; updates without chat are ignored",
+    "passed": true
+  },
+  {
+    "name": "Build AI Request: includes catalog, model, JSON mode and the saved draft",
+    "passed": true
+  },
+  {
+    "name": "Parse AI Response: complete order: prices from catalog, sheet row built, draft cleared",
+    "passed": true
+  },
+  {
+    "name": "Parse AI Response: partial order across messages: draft saved, missing fields listed, unknown product flagged",
+    "passed": true
+  },
+  {
+    "name": "Parse AI Response: plain question: AI answer passed through, no draft created",
+    "passed": true
+  },
+  {
+    "name": "Parse AI Response: LLM HTTP error and malformed JSON produce a safe fallback reply",
+    "passed": true
+  },
+  {
+    "name": "Build Confirmation: confirmation lists items, total and contact details",
+    "passed": true
+  },
+  {
+    "name": "Build Confirmation: Sheets append failed: apology reply, draft restored for retry",
+    "passed": true
+  }
+]

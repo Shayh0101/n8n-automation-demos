@@ -1,0 +1,12 @@
+{
+  "nodes": {
+    "Shop Config": [
+      {
+        "shopName": "Test Pizza",
+        "currency": "EUR",
+        "aiModel": "gpt-4o-mini",
+        "catalogJson": "[{\"name\":\"Margherita Pizza\",\"price\":9.5},{\"name\":\"Lemonade\",\"price\":3}]"
+      }
+    ]
+  }
+}

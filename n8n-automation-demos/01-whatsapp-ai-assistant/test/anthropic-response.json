@@ -1,0 +1,9 @@
+{
+  "id": "msg_test",
+  "type": "message",
+  "role": "assistant",
+  "model": "claude-sonnet-5",
+  "content": [{ "type": "text", "text": "Hi Jane! Order #1042 shipped yesterday and should arrive in 2–3 days." }],
+  "stop_reason": "end_turn",
+  "usage": { "input_tokens": 80, "output_tokens": 20 }
+}

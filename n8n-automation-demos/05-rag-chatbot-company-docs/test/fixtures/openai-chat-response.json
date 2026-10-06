@@ -1,0 +1,16 @@
+{
+  "id": "chatcmpl-mock",
+  "object": "chat.completion",
+  "model": "gpt-4o-mini-2024-07-18",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "You can carry over up to 5 unused vacation days; they expire on March 31st and cannot be paid out [1]."
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": { "prompt_tokens": 312, "completion_tokens": 28, "total_tokens": 340 }
+}

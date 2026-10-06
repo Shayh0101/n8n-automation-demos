@@ -1,0 +1,54 @@
+{
+  "result": [
+    {
+      "id": "0b9d1c3e-0000-4000-a000-000000000001",
+      "version": 3,
+      "score": 0.82,
+      "payload": {
+        "text": "Carry-over. Up to 5 unused vacation days can be carried over to the next year. Carried-over days expire on March 31st and cannot be paid out.",
+        "docId": "leave-policy",
+        "title": "Leave Policy",
+        "source": "https://wiki.example.com/hr/leave-policy",
+        "chunkIndex": 1
+      }
+    },
+    {
+      "id": "0b9d1c3e-0000-4000-a000-000000000002",
+      "version": 3,
+      "score": 0.77,
+      "payload": {
+        "text": "Annual leave. Every full-time employee receives 25 paid vacation days per calendar year.",
+        "docId": "leave-policy",
+        "title": "Leave Policy",
+        "source": "https://wiki.example.com/hr/leave-policy",
+        "chunkIndex": 0
+      }
+    },
+    {
+      "id": "0b9d1c3e-0000-4000-a000-000000000003",
+      "version": 3,
+      "score": 0.76,
+      "payload": {
+        "text": "Annual leave. Every full-time employee receives 25 paid vacation days per calendar year.",
+        "docId": "leave-policy-copy",
+        "title": "Leave Policy (duplicate upload)",
+        "source": null,
+        "chunkIndex": 0
+      }
+    },
+    {
+      "id": "0b9d1c3e-0000-4000-a000-000000000004",
+      "version": 3,
+      "score": 0.12,
+      "payload": {
+        "text": "Passwords must be at least 14 characters long.",
+        "docId": "it-security-101",
+        "title": "IT Security Basics",
+        "source": "https://wiki.example.com/it/security",
+        "chunkIndex": 0
+      }
+    }
+  ],
+  "status": "ok",
+  "time": 0.0021
+}

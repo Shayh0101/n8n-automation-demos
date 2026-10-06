@@ -1,0 +1,565 @@
+{
+  "name": "Telegram AI Order Bot → Google Sheets",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## 🛒 Telegram AI Order Bot → Google Sheets\n\nCustomers chat with the bot in natural language; AI extracts the order, the bot asks for missing details, and complete orders land in Google Sheets.\n\n### Setup (5 min)\n1. **Telegram Trigger** + **Send Telegram Reply** → create a *Telegram API* credential with the token from @BotFather.\n2. **Call LLM** → create an *OpenAI API* credential (or point the URL to any OpenAI-compatible API).\n3. **Save Order to Sheet** → *Google Sheets OAuth2* credential, paste your Spreadsheet ID, tab name `Orders`.\n4. Edit products, currency and model in **Shop Config**.\n5. Activate the workflow (Telegram needs a public HTTPS URL for n8n).",
+        "height": 400,
+        "width": 520,
+        "color": 4
+      },
+      "id": "a1f0c001-0000-4000-8000-000000000001",
+      "name": "Setup Guide",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -80,
+        -420
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### 📄 Google Sheet header row (tab `Orders`)\n`Order ID` · `Created At` · `Status` · `Telegram Chat ID` · `Telegram Username` · `Customer Name` · `Phone` · `Address` · `Items` · `Total` · `Currency` · `Notes`\n\nCreate these headers in row 1 before the first run.",
+        "height": 220,
+        "width": 380,
+        "color": 6
+      },
+      "id": "a1f0c001-0000-4000-8000-000000000002",
+      "name": "Note: Sheet Columns",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1480,
+        -260
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### 🤖 How the AI step works\nThe LLM only **extracts** data (items, name, phone, address) as JSON. Prices and totals are computed in code from **Shop Config** — the AI can't change them.\n\nPartial orders are stored per chat in workflow static data, so customers can send details in several messages. `/cancel` clears the draft.\n\n_Static data persists only for the activated (production) workflow._",
+        "height": 300,
+        "width": 440,
+        "color": 5
+      },
+      "id": "a1f0c001-0000-4000-8000-000000000003",
+      "name": "Note: AI & Drafts",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        700,
+        -340
+      ]
+    },
+    {
+      "parameters": {
+        "updates": [
+          "message"
+        ],
+        "additionalFields": {}
+      },
+      "id": "b2e1d002-0000-4000-8000-000000000001",
+      "name": "Telegram Trigger",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        200
+      ],
+      "webhookId": "c3a2b1d0-1111-4222-8333-944455566677"
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "assignments": {
+          "assignments": [
+            {
+              "id": "cfg-1",
+              "name": "shopName",
+              "value": "Demo Pizza",
+              "type": "string"
+            },
+            {
+              "id": "cfg-2",
+              "name": "currency",
+              "value": "USD",
+              "type": "string"
+            },
+            {
+              "id": "cfg-3",
+              "name": "aiModel",
+              "value": "gpt-4o-mini",
+              "type": "string"
+            },
+            {
+              "id": "cfg-4",
+              "name": "catalogJson",
+              "value": "[\n  {\n    \"name\": \"Margherita Pizza\",\n    \"price\": 9.5,\n    \"description\": \"Tomato, mozzarella, basil\"\n  },\n  {\n    \"name\": \"Pepperoni Pizza\",\n    \"price\": 11,\n    \"description\": \"Tomato, mozzarella, pepperoni\"\n  },\n  {\n    \"name\": \"Caesar Salad\",\n    \"price\": 7.25,\n    \"description\": \"Romaine, parmesan, croutons\"\n  },\n  {\n    \"name\": \"Lemonade\",\n    \"price\": 3,\n    \"description\": \"0.5 L, homemade\"\n  }\n]",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "b2e1d002-0000-4000-8000-000000000002",
+      "name": "Shop Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        220,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Normalize Message\n// Turns a raw Telegram update into a flat object and handles bot commands\n// (/start, /help, /menu, /cancel) without spending an AI call.\n// Output: { chatId, userId, username, firstName, text, needsAi, reply? }\n\nconst config = $('Shop Config').first().json;\nconst staticData = $getWorkflowStaticData('global');\nstaticData.drafts = staticData.drafts || {};\n\nfunction parseCatalog(raw) {\n  try {\n    const list = typeof raw === 'string' ? JSON.parse(raw) : raw;\n    return Array.isArray(list) ? list.filter((p) => p && p.name && Number(p.price) >= 0) : [];\n  } catch (e) {\n    return [];\n  }\n}\n\nfunction menuText(catalog, currency) {\n  if (!catalog.length) return 'The menu is not configured yet.';\n  return catalog.map((p) => `• ${p.name} — ${Number(p.price).toFixed(2)} ${currency}`).join('\\n');\n}\n\nconst catalog = parseCatalog(config.catalogJson);\nconst currency = config.currency || 'USD';\nconst shopName = config.shopName || 'our shop';\nconst out = [];\n\nfor (const item of $input.all()) {\n  const msg = item.json.message || item.json.edited_message || {};\n  const chatId = msg.chat && msg.chat.id != null ? msg.chat.id : null;\n  if (chatId == null) continue; // not a chat message (e.g. channel post) — nothing to answer\n\n  const from = msg.from || {};\n  const text = typeof msg.text === 'string' ? msg.text.trim() : '';\n  const base = {\n    chatId,\n    userId: from.id != null ? from.id : null,\n    username: from.username || '',\n    firstName: from.first_name || '',\n    text,\n  };\n\n  if (!text) {\n    out.push({ json: { ...base, needsAi: false, reply: 'Sorry, I can only read text messages. Please type your order or question.' } });\n    continue;\n  }\n\n  const command = text.startsWith('/') ? text.slice(1).split(/[\\s@]/)[0].toLowerCase() : null;\n\n  if (command === 'start' || command === 'help') {\n    const hello = base.firstName ? `Hi ${base.firstName}! ` : 'Hi! ';\n    out.push({ json: { ...base, needsAi: false, reply:\n      `${hello}Welcome to ${shopName}.\\n\\n` +\n      'Just tell me what you would like to order in your own words, e.g. \"2 Margherita pizzas to 5 Main St, I am John, +1 555 123 4567\".\\n\\n' +\n      `Menu:\\n${menuText(catalog, currency)}\\n\\n/menu — show menu\\n/cancel — clear your current order` } });\n  } else if (command === 'menu') {\n    out.push({ json: { ...base, needsAi: false, reply: `Menu:\\n${menuText(catalog, currency)}` } });\n  } else if (command === 'cancel') {\n    delete staticData.drafts[String(chatId)];\n    out.push({ json: { ...base, needsAi: false, reply: 'Your current order has been cleared. Send a new message whenever you are ready.' } });\n  } else if (command) {\n    out.push({ json: { ...base, needsAi: false, reply: 'Unknown command. Use /menu, /cancel or just type your order.' } });\n  } else {\n    // Telegram allows 4096 chars; cap input to keep AI costs predictable.\n    out.push({ json: { ...base, text: text.slice(0, 2000), needsAi: true } });\n  }\n}\n\nreturn out;\n"
+      },
+      "id": "b2e1d002-0000-4000-8000-000000000003",
+      "name": "Normalize Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "if-needs-ai",
+              "leftValue": "={{ $json.needsAi }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "b2e1d002-0000-4000-8000-000000000004",
+      "name": "Needs AI?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        660,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build AI Request\n// Builds an OpenAI-compatible Chat Completions body. The model receives the\n// product catalog and the customer's current draft order (kept per chat in\n// workflow static data), so multi-message conversations work.\n\nconst config = $('Shop Config').first().json;\nconst staticData = $getWorkflowStaticData('global');\nstaticData.drafts = staticData.drafts || {};\n\nlet catalog = [];\ntry { catalog = JSON.parse(config.catalogJson || '[]'); } catch (e) { catalog = []; }\nconst currency = config.currency || 'USD';\n\nconst systemPrompt = [\n  `You are the order assistant of \"${config.shopName || 'the shop'}\" in Telegram.`,\n  'Your job: answer questions about the products and collect orders.',\n  `Catalog (only these products can be ordered, prices in ${currency}):`,\n  JSON.stringify(catalog.map((p) => ({ name: p.name, price: p.price, description: p.description || '' }))),\n  'An order needs: at least one item, customer_name, phone, address.',\n  'Rules:',\n  '- Respond with a single JSON object only, no markdown.',\n  '- Extract ONLY information the customer actually provided. Never invent names, phones or addresses.',\n  '- Use exact product names from the catalog. If the customer asks for something not in the catalog, say so in \"reply\".',\n  '- \"order.items\" must contain the FULL list of items the customer wants now (merge with the draft unless they change it); leave it empty if no change.',\n  '- In \"reply\", answer in the customer\\'s language, briefly, and ask for whatever is still missing.',\n  'JSON schema:',\n  '{\"intent\":\"order|question|other\",\"reply\":\"string\",\"order\":{\"items\":[{\"product\":\"string\",\"quantity\":1}],\"customer_name\":\"string\",\"phone\":\"string\",\"address\":\"string\",\"notes\":\"string\"}}',\n].join('\\n');\n\nconst out = [];\nfor (const item of $input.all()) {\n  const ctx = item.json;\n  const draft = staticData.drafts[String(ctx.chatId)] || null;\n  const userContent = [\n    `Current draft order: ${draft ? JSON.stringify(draft) : 'none'}`,\n    `Customer (${ctx.firstName || 'unknown'}) says: ${ctx.text}`,\n  ].join('\\n');\n\n  out.push({\n    json: {\n      ...ctx,\n      requestBody: {\n        model: config.aiModel || 'gpt-4o-mini',\n        temperature: 0.2,\n        response_format: { type: 'json_object' },\n        messages: [\n          { role: 'system', content: systemPrompt },\n          { role: 'user', content: userContent },\n        ],\n      },\n    },\n  });\n}\n\nreturn out;\n"
+      },
+      "id": "b2e1d002-0000-4000-8000-000000000005",
+      "name": "Build AI Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "openAiApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.requestBody) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "b2e1d002-0000-4000-8000-000000000006",
+      "name": "Call LLM",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1100,
+        80
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse AI Response\n// Validates the model's JSON, merges it into the per-chat draft order,\n// prices items from the catalog (never trusts AI prices) and decides whether\n// the order is complete. Complete orders get a ready-to-append `sheetRow`.\n\nconst config = $('Shop Config').first().json;\nconst contexts = $('Build AI Request').all();\nconst staticData = $getWorkflowStaticData('global');\nstaticData.drafts = staticData.drafts || {};\n\nlet catalog = [];\ntry { catalog = JSON.parse(config.catalogJson || '[]'); } catch (e) { catalog = []; }\nconst currency = config.currency || 'USD';\nconst byName = new Map(catalog.map((p) => [String(p.name).toLowerCase().trim(), p]));\n\nconst str = (v) => (typeof v === 'string' ? v.trim() : typeof v === 'number' ? String(v) : '');\n\nfunction normalizeItems(rawItems) {\n  const items = [];\n  const unknown = [];\n  for (const raw of Array.isArray(rawItems) ? rawItems : []) {\n    const name = str(raw && raw.product);\n    const qty = Math.floor(Number(raw && raw.quantity));\n    if (!name) continue;\n    const product = byName.get(name.toLowerCase());\n    if (!product) { unknown.push(name); continue; }\n    if (!Number.isFinite(qty) || qty < 1 || qty > 100) continue;\n    const unitPrice = Number(product.price);\n    const existing = items.find((i) => i.product === product.name);\n    if (existing) {\n      existing.quantity += qty;\n      existing.lineTotal = Math.round(existing.quantity * unitPrice * 100) / 100;\n    } else {\n      items.push({ product: product.name, quantity: qty, unitPrice, lineTotal: Math.round(qty * unitPrice * 100) / 100 });\n    }\n  }\n  return { items, unknown };\n}\n\nfunction normalizePhone(v) {\n  const s = str(v);\n  const digits = s.replace(/\\D/g, '');\n  if (digits.length < 7 || digits.length > 15) return '';\n  return (s.startsWith('+') ? '+' : '') + digits;\n}\n\nfunction makeOrderId(now) {\n  const d = now.toISOString().slice(0, 10).replace(/-/g, '');\n  return `ORD-${d}-${Math.random().toString(36).slice(2, 7).toUpperCase()}`;\n}\n\nconst out = [];\n$input.all().forEach((item, i) => {\n  const ctx = (contexts[i] || contexts[0]).json;\n  const base = { chatId: ctx.chatId, username: ctx.username, firstName: ctx.firstName };\n  const key = String(ctx.chatId);\n\n  // 1) Read the model output (HTTP node runs with \"continue on error\").\n  let ai = null;\n  try {\n    if (item.json.error) throw new Error('AI request failed');\n    const content = item.json.choices && item.json.choices[0] && item.json.choices[0].message && item.json.choices[0].message.content;\n    ai = JSON.parse(String(content).replace(/^```(?:json)?\\s*|\\s*```$/g, ''));\n    if (!ai || typeof ai !== 'object') throw new Error('AI returned non-object');\n  } catch (e) {\n    out.push({ json: { ...base, isCompleteOrder: false, aiError: true,\n      reply: 'Sorry, I could not process your message right now. Please try again in a moment.' } });\n    return;\n  }\n\n  // 2) Merge into the draft.\n  const draft = staticData.drafts[key] || { items: [], customerName: '', phone: '', address: '', notes: '' };\n  const o = ai.order && typeof ai.order === 'object' ? ai.order : {};\n  const { items, unknown } = normalizeItems(o.items);\n  if (items.length) draft.items = items;\n  if (str(o.customer_name)) draft.customerName = str(o.customer_name);\n  if (normalizePhone(o.phone)) draft.phone = normalizePhone(o.phone);\n  if (str(o.address)) draft.address = str(o.address);\n  if (str(o.notes)) draft.notes = str(o.notes);\n\n  const aiReply = str(ai.reply);\n  const inOrderFlow = ai.intent === 'order' || draft.items.length > 0;\n  if (!inOrderFlow) {\n    out.push({ json: { ...base, isCompleteOrder: false, reply: aiReply || 'How can I help you? Send /menu to see what we offer.' } });\n    return;\n  }\n\n  const missing = [];\n  if (!draft.items.length) missing.push('items');\n  if (!draft.customerName) missing.push('name');\n  if (!draft.phone) missing.push('phone number');\n  if (!draft.address) missing.push('delivery address');\n\n  if (missing.length) {\n    staticData.drafts[key] = draft;\n    let reply = aiReply || `Thanks! To complete your order please send your ${missing.join(', ')}.`;\n    if (unknown.length) reply += `\\n\\n(Not on our menu: ${unknown.join(', ')})`;\n    out.push({ json: { ...base, isCompleteOrder: false, missing, draft, reply } });\n    return;\n  }\n\n  // 3) Complete order — clear the draft and build the sheet row.\n  delete staticData.drafts[key];\n  const now = new Date();\n  const total = Math.round(draft.items.reduce((s, it) => s + it.lineTotal, 0) * 100) / 100;\n  const order = { orderId: makeOrderId(now), createdAt: now.toISOString(), ...draft, total, currency };\n  out.push({\n    json: {\n      ...base,\n      isCompleteOrder: true,\n      order,\n      sheetRow: {\n        'Order ID': order.orderId,\n        'Created At': order.createdAt,\n        'Status': 'New',\n        'Telegram Chat ID': String(ctx.chatId),\n        'Telegram Username': ctx.username ? `@${ctx.username}` : '',\n        'Customer Name': order.customerName,\n        'Phone': order.phone,\n        'Address': order.address,\n        'Items': order.items.map((it) => `${it.quantity} x ${it.product}`).join('; '),\n        'Total': total,\n        'Currency': currency,\n        'Notes': order.notes,\n      },\n    },\n  });\n});\n\nreturn out;\n"
+      },
+      "id": "b2e1d002-0000-4000-8000-000000000007",
+      "name": "Parse AI Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1320,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "if-complete",
+              "leftValue": "={{ $json.isCompleteOrder }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "b2e1d002-0000-4000-8000-000000000008",
+      "name": "Order Complete?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1540,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "PASTE_YOUR_SPREADSHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Orders",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Order ID": "={{ $json.sheetRow[\"Order ID\"] }}",
+            "Created At": "={{ $json.sheetRow[\"Created At\"] }}",
+            "Status": "={{ $json.sheetRow[\"Status\"] }}",
+            "Telegram Chat ID": "={{ $json.sheetRow[\"Telegram Chat ID\"] }}",
+            "Telegram Username": "={{ $json.sheetRow[\"Telegram Username\"] }}",
+            "Customer Name": "={{ $json.sheetRow[\"Customer Name\"] }}",
+            "Phone": "={{ $json.sheetRow[\"Phone\"] }}",
+            "Address": "={{ $json.sheetRow[\"Address\"] }}",
+            "Items": "={{ $json.sheetRow[\"Items\"] }}",
+            "Total": "={{ $json.sheetRow[\"Total\"] }}",
+            "Currency": "={{ $json.sheetRow[\"Currency\"] }}",
+            "Notes": "={{ $json.sheetRow[\"Notes\"] }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Order ID",
+              "displayName": "Order ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Created At",
+              "displayName": "Created At",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Telegram Chat ID",
+              "displayName": "Telegram Chat ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Telegram Username",
+              "displayName": "Telegram Username",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Customer Name",
+              "displayName": "Customer Name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Phone",
+              "displayName": "Phone",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Address",
+              "displayName": "Address",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Items",
+              "displayName": "Items",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Total",
+              "displayName": "Total",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Currency",
+              "displayName": "Currency",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Notes",
+              "displayName": "Notes",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "b2e1d002-0000-4000-8000-000000000009",
+      "name": "Save Order to Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1760,
+        -20
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build Confirmation\n// Runs after the order row is saved to Google Sheets and builds the\n// customer-facing confirmation message. If the Sheets append failed (the node\n// runs with \"continue on error\"), the draft is restored so the customer can retry.\n\nconst orders = $('Parse AI Response').all().filter((it) => it.json.isCompleteOrder);\nconst staticData = $getWorkflowStaticData('global');\nstaticData.drafts = staticData.drafts || {};\n\nreturn $input.all().map((item, i) => {\n  const src = (orders[i] || orders[0]).json;\n  const o = src.order;\n\n  if (item.json.error) {\n    staticData.drafts[String(src.chatId)] = {\n      items: o.items, customerName: o.customerName, phone: o.phone, address: o.address, notes: o.notes || '',\n    };\n    return { json: { chatId: src.chatId, orderId: o.orderId, saveError: true,\n      reply: 'Sorry, we could not save your order right now. Your details are kept, so please send \"confirm\" in a minute to try again.' } };\n  }\n  const lines = o.items.map((it) => `• ${it.quantity} x ${it.product} — ${it.lineTotal.toFixed(2)} ${o.currency}`);\n  const reply = [\n    `✅ Order ${o.orderId} received!`,\n    '',\n    ...lines,\n    `Total: ${o.total.toFixed(2)} ${o.currency}`,\n    '',\n    `Name: ${o.customerName}`,\n    `Phone: ${o.phone}`,\n    `Address: ${o.address}`,\n    o.notes ? `Notes: ${o.notes}` : null,\n    '',\n    'We will contact you shortly to confirm delivery time.',\n  ].filter((l) => l !== null).join('\\n');\n\n  return { json: { chatId: src.chatId, orderId: o.orderId, reply } };\n});\n"
+      },
+      "id": "b2e1d002-0000-4000-8000-000000000010",
+      "name": "Build Confirmation",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1980,
+        -20
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chatId }}",
+        "text": "={{ $json.reply }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "b2e1d002-0000-4000-8000-000000000011",
+      "name": "Send Telegram Reply",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        2200,
+        200
+      ]
+    }
+  ],
+  "connections": {
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "Shop Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shop Config": {
+      "main": [
+        [
+          {
+            "node": "Normalize Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Message": {
+      "main": [
+        [
+          {
+            "node": "Needs AI?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Needs AI?": {
+      "main": [
+        [
+          {
+            "node": "Build AI Request",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Telegram Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build AI Request": {
+      "main": [
+        [
+          {
+            "node": "Call LLM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call LLM": {
+      "main": [
+        [
+          {
+            "node": "Parse AI Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse AI Response": {
+      "main": [
+        [
+          {
+            "node": "Order Complete?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Order Complete?": {
+      "main": [
+        [
+          {
+            "node": "Save Order to Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Telegram Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Order to Sheet": {
+      "main": [
+        [
+          {
+            "node": "Build Confirmation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Confirmation": {
+      "main": [
+        [
+          {
+            "node": "Send Telegram Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": []
+}

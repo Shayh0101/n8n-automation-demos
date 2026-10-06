@@ -1,0 +1,402 @@
+{
+  "name": "AI PDF Data Extraction -> Google Sheets",
+  "nodes": [
+    {
+      "id": "a1f0c001-0000-4000-8000-000000000001",
+      "name": "Sticky - Overview",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -260,
+        -400
+      ],
+      "parameters": {
+        "width": 520,
+        "height": 380,
+        "color": 4,
+        "content": "## AI PDF Data Extraction -> Google Sheets\n\nDrop a PDF (invoice, receipt, PO, quote) into a Google Drive folder.\nThe workflow downloads it, extracts the text, asks Claude to return structured JSON, validates numbers & dates, and appends one row per document to Google Sheets.\n\n**Statuses written to the sheet**\n- `OK` - extracted and checks passed\n- `NEEDS_REVIEW` - extracted, but totals mismatch / low confidence / missing fields\n- `NEEDS_OCR` - scanned PDF without selectable text\n- `ERROR` - AI call or JSON parsing failed (see Notes column)\n\nNo credentials are stored in this file."
+      }
+    },
+    {
+      "id": "a1f0c001-0000-4000-8000-000000000002",
+      "name": "Sticky - Setup",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        300,
+        -400
+      ],
+      "parameters": {
+        "width": 620,
+        "height": 380,
+        "color": 6,
+        "content": "## How to set up (5 min)\n\n1. **Google Drive Trigger** - add a *Google Drive OAuth2* credential, pick the folder to watch.\n2. **Download PDF** - select the same Google Drive credential.\n3. **Claude - Extract Data** - create a *Header Auth* credential:\n   Name: `x-api-key`, Value: your Anthropic API key.\n4. **Append to Sheet** (both nodes) - add a *Google Sheets OAuth2* credential, paste your spreadsheet URL and make sure a tab named `Extracted` exists (headers are created automatically from the first row).\n5. Optional: change the model / max text length in **Build AI Request**.\n6. Click **Test workflow** with a sample PDF, then **Activate**."
+      }
+    },
+    {
+      "id": "a1f0c001-0000-4000-8000-000000000003",
+      "name": "Sticky - Error handling",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        960,
+        -400
+      ],
+      "parameters": {
+        "width": 440,
+        "height": 380,
+        "color": 3,
+        "content": "## Error handling\n\n- The Claude call retries 3x (5 s apart) and then *continues* with the error, so a failed document becomes an `ERROR` row instead of stopping the batch.\n- Model output is parsed defensively (code fences / stray text tolerated).\n- Amounts like `$1,234.56` or `1.234,56` are normalised to numbers, dates to `YYYY-MM-DD`.\n- `subtotal + tax` is cross-checked against `total`."
+      }
+    },
+    {
+      "id": "a1f0c001-0000-4000-8000-000000000010",
+      "name": "Google Drive Trigger",
+      "type": "n8n-nodes-base.googleDriveTrigger",
+      "typeVersion": 1,
+      "position": [
+        -200,
+        100
+      ],
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "triggerOn": "specificFolder",
+        "folderToWatch": {
+          "__rl": true,
+          "value": "",
+          "mode": "list",
+          "cachedResultName": ""
+        },
+        "event": "fileCreated",
+        "options": {
+          "fileType": "application/pdf"
+        }
+      }
+    },
+    {
+      "id": "a1f0c001-0000-4000-8000-000000000011",
+      "name": "Download PDF",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        20,
+        100
+      ],
+      "parameters": {
+        "operation": "download",
+        "fileId": {
+          "__rl": true,
+          "value": "={{ $json.id }}",
+          "mode": "id"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "a1f0c001-0000-4000-8000-000000000012",
+      "name": "Extract PDF Text",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [
+        240,
+        100
+      ],
+      "parameters": {
+        "operation": "pdf",
+        "binaryPropertyName": "data",
+        "options": {}
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "a1f0c001-0000-4000-8000-000000000013",
+      "name": "Build AI Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        460,
+        100
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// n8n Code node: \"Build AI Request\" (mode: Run Once for All Items)\n// Input : items from \"Extract PDF Text\" ({ text, numpages, info })\n// Output: one item per document with file metadata + a ready-to-send Claude Messages API body.\n\n// ---- Configuration (edit here) -------------------------------------------\nconst MODEL = 'claude-sonnet-5';      // any Claude model id\nconst MAX_CHARS = 60000;              // truncate very long PDFs to control cost\nconst MIN_TEXT_CHARS = 20;            // below this the PDF is treated as scanned/empty\n// ---------------------------------------------------------------------------\n\nconst SYSTEM_PROMPT = [\n  'You are a precise document data extraction engine.',\n  'Extract data from the business document (invoice, receipt, purchase order, quote or similar).',\n  'Return ONLY a single JSON object, no prose, no markdown fences, with exactly these keys:',\n  '{',\n  '  \"document_type\": \"invoice | receipt | purchase_order | quote | other\",',\n  '  \"vendor_name\": string | null,',\n  '  \"customer_name\": string | null,',\n  '  \"document_number\": string | null,',\n  '  \"document_date\": \"YYYY-MM-DD\" | null,',\n  '  \"due_date\": \"YYYY-MM-DD\" | null,',\n  '  \"currency\": \"ISO 4217 code, e.g. USD\" | null,',\n  '  \"subtotal\": number | null,',\n  '  \"tax\": number | null,',\n  '  \"total\": number | null,',\n  '  \"line_items\": [{ \"description\": string, \"quantity\": number | null, \"unit_price\": number | null, \"amount\": number | null }],',\n  '  \"confidence\": number between 0 and 1',\n  '}',\n  'Use null for anything not present in the document. Never invent values.',\n].join('\\n');\n\n// Safely read file metadata from the \"Download PDF\" node (paired item).\nfunction fileMeta(index) {\n  try {\n    const src = $('Download PDF').itemMatching(index).json || {};\n    return { fileId: src.id || '', fileName: src.name || '', fileUrl: src.webViewLink || '' };\n  } catch (e) {\n    return { fileId: '', fileName: '', fileUrl: '' };\n  }\n}\n\nconst out = [];\nconst items = $input.all();\n\nfor (let i = 0; i < items.length; i++) {\n  const json = items[i].json || {};\n  const meta = fileMeta(i);\n  const raw = typeof json.text === 'string' ? json.text : '';\n  // Collapse whitespace noise produced by PDF text extraction.\n  const text = raw.replace(/\\r/g, '').replace(/[ \\t]+/g, ' ').replace(/\\n{3,}/g, '\\n\\n').trim();\n  const hasText = text.length >= MIN_TEXT_CHARS;\n  const truncated = text.length > MAX_CHARS;\n\n  out.push({\n    json: {\n      ...meta,\n      pages: json.numpages || null,\n      hasText,\n      truncated,\n      textLength: text.length,\n      requestBody: hasText\n        ? {\n            model: MODEL,\n            max_tokens: 2048,\n            temperature: 0,\n            system: SYSTEM_PROMPT,\n            messages: [\n              {\n                role: 'user',\n                content: `File name: ${meta.fileName || 'unknown'}\\n\\nDocument text:\\n\"\"\"\\n${text.slice(0, MAX_CHARS)}\\n\"\"\"`,\n              },\n            ],\n          }\n        : null,\n    },\n    pairedItem: { item: i },\n  });\n}\n\nreturn out;\n"
+      }
+    },
+    {
+      "id": "a1f0c001-0000-4000-8000-000000000014",
+      "name": "Has Text?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        680,
+        100
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "b7d2e5a0-1c3f-4e8a-9d11-2f6b0c4a7e01",
+              "leftValue": "={{ $json.hasText }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "a1f0c001-0000-4000-8000-000000000015",
+      "name": "Claude - Extract Data",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        920,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.requestBody) }}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "a1f0c001-0000-4000-8000-000000000016",
+      "name": "Parse & Validate",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1140,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// n8n Code node: \"Parse & Validate\" (mode: Run Once for All Items)\n// Input : Claude Messages API responses (or error items, because the HTTP node uses \"Continue on error\")\n// Output: one flat row per document, ready for Google Sheets.\n// Status: OK | NEEDS_REVIEW (parsed, but something looks off) | ERROR (no usable data)\n\nconst LOW_CONFIDENCE = 0.7;     // below this the row is flagged for review\nconst TOTAL_TOLERANCE = 0.02;   // allowed rounding gap for subtotal + tax vs total\n\nfunction meta(index) {\n  try {\n    return $('Build AI Request').itemMatching(index).json || {};\n  } catch (e) {\n    return {};\n  }\n}\n\n// \"$1,234.56\", \"1.234,56 EUR\", 1234.56, \"(12.00)\" -> number | null\nfunction toNumber(v) {\n  if (v === null || v === undefined || v === '') return null;\n  if (typeof v === 'number') return Number.isFinite(v) ? v : null;\n  let s = String(v).trim();\n  const negative = /^\\(.*\\)$/.test(s) || s.startsWith('-');\n  s = s.replace(/[^\\d.,]/g, '');\n  if (!s) return null;\n  const lastComma = s.lastIndexOf(',');\n  const lastDot = s.lastIndexOf('.');\n  const commaIsThousands = lastDot === -1 && /^\\d{1,3}(,\\d{3})+$/.test(s);\n  if (lastComma > lastDot && !commaIsThousands) {\n    // European format: 1.234,56 (or 12,5)\n    s = s.replace(/\\./g, '').replace(',', '.');\n  } else {\n    s = s.replace(/,/g, '');\n  }\n  const n = parseFloat(s);\n  if (!Number.isFinite(n)) return null;\n  return negative ? -n : n;\n}\n\n// Accepts ISO, \"2026-3-5\", \"03/05/2026\" (US), \"5.3.2026\" (EU), \"March 5, 2026\" -> YYYY-MM-DD | null\nfunction toIsoDate(v) {\n  if (!v) return null;\n  const s = String(v).trim();\n  const pad = (n) => String(n).padStart(2, '0');\n  let m = s.match(/^(\\d{4})-(\\d{1,2})-(\\d{1,2})/);\n  if (m) return `${m[1]}-${pad(m[2])}-${pad(m[3])}`;\n  m = s.match(/^(\\d{1,2})\\/(\\d{1,2})\\/(\\d{4})$/);\n  if (m) return `${m[3]}-${pad(m[1])}-${pad(m[2])}`;\n  m = s.match(/^(\\d{1,2})\\.(\\d{1,2})\\.(\\d{4})$/);\n  if (m) return `${m[3]}-${pad(m[2])}-${pad(m[1])}`;\n  const d = new Date(s + ' UTC');\n  if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10);\n  return null;\n}\n\n// Pull the JSON object out of the model text (tolerates ```json fences or stray prose).\nfunction extractJson(text) {\n  if (typeof text !== 'string') throw new Error('Empty model response');\n  const cleaned = text.replace(/```(?:json)?/gi, '').trim();\n  const start = cleaned.indexOf('{');\n  const end = cleaned.lastIndexOf('}');\n  if (start === -1 || end <= start) throw new Error('No JSON object in model response');\n  return JSON.parse(cleaned.slice(start, end + 1));\n}\n\nfunction baseRow(m) {\n  return {\n    'Processed At': new Date().toISOString(),\n    'File Name': m.fileName || '',\n    'File ID': m.fileId || '',\n    'File URL': m.fileUrl || '',\n  };\n}\n\nconst out = [];\nconst items = $input.all();\n\nfor (let i = 0; i < items.length; i++) {\n  const r = items[i].json || {};\n  const m = meta(i);\n  const row = baseRow(m);\n  const notes = [];\n\n  try {\n    if (r.error) {\n      const msg = typeof r.error === 'string' ? r.error : r.error.message || JSON.stringify(r.error);\n      throw new Error(`AI request failed: ${msg}`);\n    }\n    const textBlock = Array.isArray(r.content) ? r.content.find((c) => c && c.type === 'text') : null;\n    const data = extractJson(textBlock && textBlock.text);\n    if (r.stop_reason === 'max_tokens') notes.push('Model output was cut off (max_tokens)');\n\n    const lineItems = Array.isArray(data.line_items) ? data.line_items : [];\n    const subtotal = toNumber(data.subtotal);\n    const tax = toNumber(data.tax);\n    const total = toNumber(data.total);\n    const confidence = toNumber(data.confidence);\n\n    if (total === null) notes.push('Total not found');\n    if (!data.vendor_name) notes.push('Vendor not found');\n    if (subtotal !== null && total !== null && Math.abs(subtotal + (tax || 0) - total) > TOTAL_TOLERANCE) {\n      notes.push(`Subtotal + tax (${(subtotal + (tax || 0)).toFixed(2)}) != total (${total.toFixed(2)})`);\n    }\n    if (confidence !== null && confidence < LOW_CONFIDENCE) notes.push(`Low confidence (${confidence})`);\n    if (m.truncated) notes.push('Document text was truncated');\n\n    out.push({\n      json: {\n        ...row,\n        'Document Type': data.document_type || 'other',\n        Vendor: data.vendor_name || '',\n        Customer: data.customer_name || '',\n        'Document Number': data.document_number || '',\n        'Document Date': toIsoDate(data.document_date) || '',\n        'Due Date': toIsoDate(data.due_date) || '',\n        Currency: (data.currency || '').toString().toUpperCase(),\n        Subtotal: subtotal === null ? '' : subtotal,\n        Tax: tax === null ? '' : tax,\n        Total: total === null ? '' : total,\n        'Line Items Count': lineItems.length,\n        'Line Items': lineItems\n          .map((li) => `${li.quantity ?? ''} x ${li.description ?? ''} = ${toNumber(li.amount) ?? ''}`.trim())\n          .join(' | '),\n        Confidence: confidence === null ? '' : confidence,\n        Status: notes.length ? 'NEEDS_REVIEW' : 'OK',\n        Notes: notes.join('; '),\n      },\n      pairedItem: { item: i },\n    });\n  } catch (err) {\n    out.push({\n      json: { ...row, Status: 'ERROR', Notes: String(err.message || err) },\n      pairedItem: { item: i },\n    });\n  }\n}\n\nreturn out;\n"
+      }
+    },
+    {
+      "id": "a1f0c001-0000-4000-8000-000000000017",
+      "name": "Flag Unreadable PDF",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        920,
+        220
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// n8n Code node: \"Flag Unreadable PDF\" (mode: Run Once for All Items)\n// Input : items from \"Has Text?\" false branch (scanned / image-only / empty PDFs)\n// Output: a NEEDS_OCR row so nothing is silently dropped from the sheet.\n\nreturn $input.all().map((item, i) => {\n  const j = item.json || {};\n  return {\n    json: {\n      'Processed At': new Date().toISOString(),\n      'File Name': j.fileName || '',\n      'File ID': j.fileId || '',\n      'File URL': j.fileUrl || '',\n      Status: 'NEEDS_OCR',\n      Notes: `No selectable text found (${j.textLength || 0} chars, ${j.pages || '?'} pages). Likely a scanned PDF - enable OCR.`,\n    },\n    pairedItem: { item: i },\n  };\n});\n"
+      }
+    },
+    {
+      "id": "a1f0c001-0000-4000-8000-000000000018",
+      "name": "Append to Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1360,
+        0
+      ],
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "PASTE_YOUR_GOOGLE_SHEET_URL_HERE",
+          "mode": "url"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Extracted",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "a1f0c001-0000-4000-8000-000000000019",
+      "name": "Append NEEDS_OCR Row",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1140,
+        220
+      ],
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "PASTE_YOUR_GOOGLE_SHEET_URL_HERE",
+          "mode": "url"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Extracted",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Google Drive Trigger": {
+      "main": [
+        [
+          {
+            "node": "Download PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download PDF": {
+      "main": [
+        [
+          {
+            "node": "Extract PDF Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract PDF Text": {
+      "main": [
+        [
+          {
+            "node": "Build AI Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build AI Request": {
+      "main": [
+        [
+          {
+            "node": "Has Text?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Text?": {
+      "main": [
+        [
+          {
+            "node": "Claude - Extract Data",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Flag Unreadable PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude - Extract Data": {
+      "main": [
+        [
+          {
+            "node": "Parse & Validate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse & Validate": {
+      "main": [
+        [
+          {
+            "node": "Append to Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Flag Unreadable PDF": {
+      "main": [
+        [
+          {
+            "node": "Append NEEDS_OCR Row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true
+  },
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": []
+}

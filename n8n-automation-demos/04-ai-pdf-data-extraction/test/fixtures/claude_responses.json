@@ -1,0 +1,24 @@
+{
+  "description": "Mocked Claude Messages API responses as received by 'Parse & Validate' (clean JSON, fenced EU-format JSON with mismatched total, HTTP error, non-JSON answer).",
+  "meta": [
+    { "fileId": "1AbCdEfG", "fileName": "ACME-INV-2041.pdf", "fileUrl": "u1", "truncated": false },
+    { "fileId": "2XyZ", "fileName": "eu-invoice.pdf", "fileUrl": "u2", "truncated": false },
+    { "fileId": "3Err", "fileName": "broken.pdf", "fileUrl": "u3", "truncated": false },
+    { "fileId": "4Bad", "fileName": "garbage.pdf", "fileUrl": "u4", "truncated": false }
+  ],
+  "input": [
+    {
+      "id": "msg_1", "type": "message", "role": "assistant", "stop_reason": "end_turn",
+      "content": [{ "type": "text", "text": "{\"document_type\":\"invoice\",\"vendor_name\":\"ACME Supplies Ltd.\",\"customer_name\":\"Northwind LLC\",\"document_number\":\"INV-2041\",\"document_date\":\"03/15/2026\",\"due_date\":\"2026-04-14\",\"currency\":\"usd\",\"subtotal\":\"$625.00\",\"tax\":50,\"total\":\"675.00\",\"line_items\":[{\"description\":\"Office chair\",\"quantity\":2,\"unit_price\":250,\"amount\":500},{\"description\":\"Paper box\",\"quantity\":10,\"unit_price\":12.5,\"amount\":125}],\"confidence\":0.96}" }]
+    },
+    {
+      "id": "msg_2", "type": "message", "role": "assistant", "stop_reason": "end_turn",
+      "content": [{ "type": "text", "text": "Here is the data:\n```json\n{\"document_type\":\"invoice\",\"vendor_name\":\"Müller GmbH\",\"document_number\":\"RE-77\",\"document_date\":\"5.3.2026\",\"currency\":\"EUR\",\"subtotal\":\"1.000,00\",\"tax\":\"190,00\",\"total\":\"1.250,00\",\"line_items\":[],\"confidence\":0.55}\n```" }]
+    },
+    { "error": { "message": "429 - rate_limit_error" } },
+    {
+      "id": "msg_4", "type": "message", "role": "assistant", "stop_reason": "end_turn",
+      "content": [{ "type": "text", "text": "Sorry, I cannot read this document." }]
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "qdrantUrl": "http://localhost:6333/",
+  "collection": "company_docs",
+  "embeddingModel": "text-embedding-3-small",
+  "chatModel": "gpt-4o-mini",
+  "topK": 5,
+  "minScore": 0.3,
+  "chunkSize": 400,
+  "chunkOverlap": 60,
+  "maxContextChars": 12000
+}

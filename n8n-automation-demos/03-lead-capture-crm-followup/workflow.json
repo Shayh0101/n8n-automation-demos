@@ -1,0 +1,566 @@
+{
+  "name": "Lead Capture → CRM (HubSpot / GoHighLevel / Airtable) + Email Follow-up",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Lead capture → CRM → follow-up email\n\n**Setup (5 min):**\n1. Open **Config** and set `crmProvider` (`hubspot` | `gohighlevel` | `airtable`), `companyName`, `fromEmail`, `bookingUrl`.\n2. Attach credentials to the CRM node you use (see note above the CRM nodes).\n3. Attach an **SMTP** credential to *Send Follow-up Email*.\n4. Activate the workflow and point your form to the **Production URL** of *Lead Webhook* (POST, JSON or form-urlencoded).\n\nResponses: `200 {ok:true}` on success, `422 {ok:false, errors:[...]}` for invalid/spam leads.",
+        "height": 420,
+        "width": 420,
+        "color": 4
+      },
+      "id": "a0000000-0000-4000-8000-000000000001",
+      "name": "Sticky: How to set up",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -460,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### CRM credentials (attach only the one you use)\n- **HubSpot:** credential type *HubSpot App Token* (Private App token with `crm.objects.contacts.write`).\n- **GoHighLevel:** *Header Auth* → Name `Authorization`, Value `Bearer <Private Integration token>`; set `ghlLocationId` in Config.\n- **Airtable:** *Airtable Personal Access Token*; set `airtableBaseId` / `airtableTable` in Config. Table needs an `Email` column (+ First Name, Last Name, Phone, Company, Message, Source, UTM Source/Medium/Campaign, Submitted At).\n\nAll three calls are **upserts by email** — re-submits update the contact instead of duplicating it.",
+        "height": 320,
+        "width": 460,
+        "color": 6
+      },
+      "id": "a0000000-0000-4000-8000-000000000002",
+      "name": "Sticky: CRM credentials",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1060,
+        -360
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### Follow-up email\nText/HTML is built in *Build Follow-up Email* (edit the copy there). Email errors do **not** fail the run — the lead is already saved in the CRM.",
+        "height": 160,
+        "width": 340,
+        "color": 5
+      },
+      "id": "a0000000-0000-4000-8000-000000000003",
+      "name": "Sticky: Email",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1500,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "lead-capture",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "b0000000-0000-4000-8000-000000000001",
+      "name": "Lead Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        300
+      ],
+      "webhookId": "b7f3c2a1-5d4e-4f6a-9b8c-1d2e3f4a5b6c"
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "assignments": {
+          "assignments": [
+            {
+              "id": "c1",
+              "name": "config.crmProvider",
+              "value": "hubspot",
+              "type": "string"
+            },
+            {
+              "id": "c2",
+              "name": "config.companyName",
+              "value": "Acme Inc.",
+              "type": "string"
+            },
+            {
+              "id": "c3",
+              "name": "config.fromEmail",
+              "value": "hello@example.com",
+              "type": "string"
+            },
+            {
+              "id": "c4",
+              "name": "config.bookingUrl",
+              "value": "https://calendly.com/your-team/intro",
+              "type": "string"
+            },
+            {
+              "id": "c5",
+              "name": "config.ghlLocationId",
+              "value": "YOUR_GHL_LOCATION_ID",
+              "type": "string"
+            },
+            {
+              "id": "c6",
+              "name": "config.airtableBaseId",
+              "value": "appXXXXXXXXXXXXXX",
+              "type": "string"
+            },
+            {
+              "id": "c7",
+              "name": "config.airtableTable",
+              "value": "Leads",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "b0000000-0000-4000-8000-000000000002",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        220,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Normalize & Validate Lead\n// Mode: \"Run Once for All Items\". Accepts the Webhook payload (fields under `body`)\n// or a flat object, cleans it up, validates it and prepares the request body\n// for the CRM selected in the \"Config\" node (config.crmProvider).\n\nconst EMAIL_RE = /^[^\\s@]+@[^\\s@]+\\.[^\\s@]{2,}$/;\nconst SUPPORTED_CRMS = ['hubspot', 'gohighlevel', 'airtable'];\nconst MAX_MESSAGE_LENGTH = 5000;\n\n// Return the first non-empty value among several possible field names\n// (forms from Webflow, Typeform, Elementor, etc. all name fields differently).\nconst pick = (obj, keys) => {\n  for (const key of keys) {\n    const value = obj ? obj[key] : undefined;\n    if (value !== undefined && value !== null && String(value).trim() !== '') {\n      return String(value).trim();\n    }\n  }\n  return '';\n};\n\nconst normalizePhone = (raw) => {\n  if (!raw) return '';\n  const digits = raw.replace(/\\D/g, '');\n  return (raw.startsWith('+') ? '+' : '') + digits;\n};\n\nconst toTitle = (s) => s.replace(/\\b\\p{L}/gu, (c) => c.toUpperCase());\n\nreturn $input.all().map((item) => {\n  const json = item.json || {};\n  const config = json.config || {};\n  const src = json.body && typeof json.body === 'object' ? json.body : json;\n  const query = json.query || {};\n  const errors = [];\n\n  // --- Name -----------------------------------------------------------------\n  let firstName = pick(src, ['firstName', 'first_name', 'firstname', 'fname']);\n  let lastName = pick(src, ['lastName', 'last_name', 'lastname', 'lname']);\n  const fullName = pick(src, ['name', 'Name', 'fullName', 'full_name', 'your-name']);\n  if (!firstName && fullName) {\n    const parts = fullName.split(/\\s+/);\n    firstName = parts.shift();\n    lastName = lastName || parts.join(' ');\n  }\n  firstName = toTitle(firstName);\n  lastName = toTitle(lastName);\n\n  // --- Contact fields -------------------------------------------------------\n  const email = pick(src, ['email', 'Email', 'email_address', 'your-email']).toLowerCase();\n  const phone = normalizePhone(pick(src, ['phone', 'Phone', 'phone_number', 'tel']));\n  const company = pick(src, ['company', 'Company', 'companyName', 'organization']);\n  const message = pick(src, ['message', 'Message', 'comments', 'your-message']);\n  const source = pick(src, ['source', 'form_name', 'formName']) || 'Website form';\n  const utm = {\n    source: pick(src, ['utm_source']) || pick(query, ['utm_source']),\n    medium: pick(src, ['utm_medium']) || pick(query, ['utm_medium']),\n    campaign: pick(src, ['utm_campaign']) || pick(query, ['utm_campaign']),\n  };\n\n  // --- Validation -----------------------------------------------------------\n  if (!email) errors.push('email is required');\n  else if (!EMAIL_RE.test(email)) errors.push('email is invalid');\n  if (phone && phone.replace('+', '').length < 7) errors.push('phone is invalid');\n  if (message.length > MAX_MESSAGE_LENGTH) errors.push('message is too long');\n  // Honeypot: hidden form field that humans leave empty and bots fill in.\n  if (pick(src, ['website_url', '_gotcha', 'hp_field'])) errors.push('spam detected');\n\n  const crmProvider = String(config.crmProvider || 'hubspot').trim().toLowerCase();\n  if (!SUPPORTED_CRMS.includes(crmProvider)) {\n    errors.push(`unsupported crmProvider \"${crmProvider}\" (use: ${SUPPORTED_CRMS.join(', ')})`);\n  }\n\n  const lead = {\n    firstName, lastName, email, phone, company, message, source, utm,\n    submittedAt: new Date().toISOString(),\n  };\n\n  // --- CRM request bodies (upsert by email, so re-submits don't duplicate) ---\n  let crmBody = null;\n  if (errors.length === 0) {\n    if (crmProvider === 'hubspot') {\n      // POST /crm/v3/objects/contacts/batch/upsert\n      const properties = { email, firstname: firstName, lastname: lastName, phone, company, message, lifecyclestage: 'lead' };\n      Object.keys(properties).forEach((k) => properties[k] === '' && delete properties[k]);\n      crmBody = { inputs: [{ idProperty: 'email', id: email, properties }] };\n    } else if (crmProvider === 'gohighlevel') {\n      // POST /contacts/upsert (LeadConnector API v2)\n      crmBody = {\n        locationId: config.ghlLocationId || '',\n        firstName, lastName, email, phone, companyName: company, source,\n        tags: ['n8n-lead', utm.source && `utm:${utm.source}`].filter(Boolean),\n      };\n      Object.keys(crmBody).forEach((k) => crmBody[k] === '' && delete crmBody[k]);\n    } else if (crmProvider === 'airtable') {\n      // PATCH /v0/{baseId}/{table} with performUpsert\n      crmBody = {\n        performUpsert: { fieldsToMergeOn: ['Email'] },\n        typecast: true,\n        records: [{\n          fields: {\n            Email: email, 'First Name': firstName, 'Last Name': lastName, Phone: phone,\n            Company: company, Message: message, Source: source,\n            'UTM Source': utm.source, 'UTM Medium': utm.medium, 'UTM Campaign': utm.campaign,\n            'Submitted At': lead.submittedAt,\n          },\n        }],\n      };\n    }\n  }\n\n  return { json: { valid: errors.length === 0, errors, crmProvider, lead, crmBody, config } };\n});\n"
+      },
+      "id": "b0000000-0000-4000-8000-000000000003",
+      "name": "Normalize & Validate Lead",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "v1",
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "b0000000-0000-4000-8000-000000000004",
+      "name": "Lead Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        660,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ ok: false, errors: $json.errors }) }}",
+        "options": {
+          "responseCode": 422
+        }
+      },
+      "id": "b0000000-0000-4000-8000-000000000005",
+      "name": "Respond 422 Invalid",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        880,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "r1",
+                    "leftValue": "={{ $json.crmProvider }}",
+                    "rightValue": "hubspot",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "HubSpot"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "r2",
+                    "leftValue": "={{ $json.crmProvider }}",
+                    "rightValue": "gohighlevel",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "GoHighLevel"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "r3",
+                    "leftValue": "={{ $json.crmProvider }}",
+                    "rightValue": "airtable",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Airtable"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "b0000000-0000-4000-8000-000000000006",
+      "name": "Route to CRM",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        880,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.hubapi.com/crm/v3/objects/contacts/batch/upsert",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "hubspotAppToken",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.crmBody) }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "b0000000-0000-4000-8000-000000000007",
+      "name": "HubSpot: Upsert Contact",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1100,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://services.leadconnectorhq.com/contacts/upsert",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Version",
+              "value": "2021-07-28"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.crmBody) }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "b0000000-0000-4000-8000-000000000008",
+      "name": "GoHighLevel: Upsert Contact",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1100,
+        160
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ 'https://api.airtable.com/v0/' + $json.config.airtableBaseId + '/' + encodeURIComponent($json.config.airtableTable || 'Leads') }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "airtableTokenApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.crmBody) }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "b0000000-0000-4000-8000-000000000009",
+      "name": "Airtable: Upsert Record",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1100,
+        320
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build Follow-up Email\n// Mode: \"Run Once for All Items\". Runs after the CRM request: picks up the CRM\n// record id from the API response and renders a personalised HTML + text email.\n\nconst ctx = $('Normalize & Validate Lead').first().json;\nconst { lead, config = {}, crmProvider } = ctx;\nconst res = ($input.first() && $input.first().json) || {};\n\n// Each CRM returns the record id in a different place.\nconst crmRecordId =\n  (res.results && res.results[0] && res.results[0].id) || // HubSpot batch upsert\n  (res.contact && res.contact.id) ||                      // GoHighLevel upsert\n  (res.records && res.records[0] && res.records[0].id) || // Airtable upsert\n  res.id ||\n  null;\n\nconst esc = (s) => String(s == null ? '' : s)\n  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')\n  .replace(/\"/g, '&quot;').replace(/'/g, '&#39;');\n\nconst companyName = config.companyName || 'Our team';\nconst greetingName = lead.firstName || 'there';\nconst bookingUrl = config.bookingUrl || '';\nconst quoted = lead.message ? lead.message.slice(0, 500) : '';\n\nconst subject = `Thanks for reaching out, ${greetingName}!`;\n\nconst html = [\n  `<p>Hi ${esc(greetingName)},</p>`,\n  `<p>Thanks for contacting ${esc(companyName)}. We received your request and a member of our team will get back to you within one business day.</p>`,\n  quoted ? `<p>Your message:</p><blockquote style=\"border-left:3px solid #ccc;padding-left:10px;color:#555\">${esc(quoted)}</blockquote>` : '',\n  bookingUrl ? `<p>Want to talk sooner? <a href=\"${esc(bookingUrl)}\">Book a call here</a>.</p>` : '',\n  `<p>Best regards,<br>${esc(companyName)}</p>`,\n].filter(Boolean).join('\\n');\n\nconst text = [\n  `Hi ${greetingName},`,\n  '',\n  `Thanks for contacting ${companyName}. We received your request and a member of our team will get back to you within one business day.`,\n  quoted ? `\\nYour message:\\n> ${quoted}` : null,\n  bookingUrl ? `\\nWant to talk sooner? Book a call: ${bookingUrl}` : null,\n  '',\n  `Best regards,\\n${companyName}`,\n].filter((l) => l !== null).join('\\n');\n\nreturn [{\n  json: {\n    to: lead.email,\n    from: config.fromEmail || '',\n    subject,\n    html,\n    text,\n    crmProvider,\n    crmRecordId,\n  },\n}];\n"
+      },
+      "id": "b0000000-0000-4000-8000-000000000010",
+      "name": "Build Follow-up Email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1320,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{ $json.from }}",
+        "toEmail": "={{ $json.to }}",
+        "subject": "={{ $json.subject }}",
+        "emailFormat": "both",
+        "text": "={{ $json.text }}",
+        "html": "={{ $json.html }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "b0000000-0000-4000-8000-000000000011",
+      "name": "Send Follow-up Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1540,
+        160
+      ],
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ ok: true, crm: $('Build Follow-up Email').first().json.crmProvider, crmRecordId: $('Build Follow-up Email').first().json.crmRecordId }) }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "b0000000-0000-4000-8000-000000000012",
+      "name": "Respond 200 OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1760,
+        160
+      ]
+    }
+  ],
+  "connections": {
+    "Lead Webhook": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Normalize & Validate Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize & Validate Lead": {
+      "main": [
+        [
+          {
+            "node": "Lead Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lead Valid?": {
+      "main": [
+        [
+          {
+            "node": "Route to CRM",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond 422 Invalid",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route to CRM": {
+      "main": [
+        [
+          {
+            "node": "HubSpot: Upsert Contact",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "GoHighLevel: Upsert Contact",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Airtable: Upsert Record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HubSpot: Upsert Contact": {
+      "main": [
+        [
+          {
+            "node": "Build Follow-up Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GoHighLevel: Upsert Contact": {
+      "main": [
+        [
+          {
+            "node": "Build Follow-up Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Airtable: Upsert Record": {
+      "main": [
+        [
+          {
+            "node": "Build Follow-up Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Follow-up Email": {
+      "main": [
+        [
+          {
+            "node": "Send Follow-up Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Follow-up Email": {
+      "main": [
+        [
+          {
+            "node": "Respond 200 OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true
+  },
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": []
+}

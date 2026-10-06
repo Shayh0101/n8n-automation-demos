@@ -1,0 +1,62 @@
+{
+  "name": "AI output parsing, draft merge, pricing (LLM mocked)",
+  "node": "Parse AI Response",
+  "cases": [
+    {
+      "name": "complete order: prices from catalog, sheet row built, draft cleared",
+      "nodes": { "Build AI Request": [{ "chatId": 111, "username": "john_d", "firstName": "John" }] },
+      "staticData": { "drafts": { "111": { "items": [], "customerName": "", "phone": "", "address": "", "notes": "" } } },
+      "input": [{ "choices": [{ "message": { "content": "{\"intent\":\"order\",\"reply\":\"Great!\",\"order\":{\"items\":[{\"product\":\"margherita pizza\",\"quantity\":2},{\"product\":\"Lemonade\",\"quantity\":1,\"price\":0.01}],\"customer_name\":\"John Doe\",\"phone\":\"+1 (555) 123-4567\",\"address\":\"5 Main St\",\"notes\":\"no onions\"}}" } }] }],
+      "expect": [{
+        "chatId": 111,
+        "isCompleteOrder": true,
+        "order": { "orderId": "re:^ORD-\\d{8}-[A-Z0-9]{5}$", "total": 22, "currency": "EUR", "phone": "+15551234567" },
+        "sheetRow": {
+          "Order ID": "re:^ORD-",
+          "Status": "New",
+          "Telegram Chat ID": "111",
+          "Telegram Username": "@john_d",
+          "Customer Name": "John Doe",
+          "Phone": "+15551234567",
+          "Address": "5 Main St",
+          "Items": "2 x Margherita Pizza; 1 x Lemonade",
+          "Total": 22,
+          "Currency": "EUR",
+          "Notes": "no onions"
+        }
+      }],
+      "expectStaticData": { "drafts": { "111": "$absent" } }
+    },
+    {
+      "name": "partial order across messages: draft saved, missing fields listed, unknown product flagged",
+      "nodes": { "Build AI Request": [{ "chatId": 222, "username": "", "firstName": "" }] },
+      "staticData": { "drafts": { "222": { "items": [], "customerName": "Anna", "phone": "", "address": "", "notes": "" } } },
+      "input": [{ "choices": [{ "message": { "content": "```json\n{\"intent\":\"order\",\"reply\":\"\",\"order\":{\"items\":[{\"product\":\"Lemonade\",\"quantity\":3},{\"product\":\"Sushi\",\"quantity\":1}],\"phone\":\"12\"}}\n```" } }] }],
+      "expect": [{
+        "isCompleteOrder": false,
+        "missing": ["phone number", "delivery address"],
+        "reply": "re:send your phone number, delivery address.*Not on our menu: Sushi"
+      }],
+      "expectStaticData": { "drafts": { "222": { "customerName": "Anna", "phone": "", "items": [{ "product": "Lemonade", "quantity": 3, "unitPrice": 3, "lineTotal": 9 }] } } }
+    },
+    {
+      "name": "plain question: AI answer passed through, no draft created",
+      "nodes": { "Build AI Request": [{ "chatId": 333 }] },
+      "input": [{ "choices": [{ "message": { "content": "{\"intent\":\"question\",\"reply\":\"We are open 10:00-22:00.\",\"order\":{\"items\":[]}}" } }] }],
+      "expect": [{ "isCompleteOrder": false, "reply": "We are open 10:00-22:00." }],
+      "expectStaticData": { "drafts": { "333": "$absent" } }
+    },
+    {
+      "name": "LLM HTTP error and malformed JSON produce a safe fallback reply",
+      "nodes": { "Build AI Request": [{ "chatId": 444 }, { "chatId": 555 }] },
+      "input": [
+        { "error": { "message": "401 Unauthorized" } },
+        { "choices": [{ "message": { "content": "Sure! Your order is..." } }] }
+      ],
+      "expect": [
+        { "chatId": 444, "isCompleteOrder": false, "aiError": true, "reply": "re:try again" },
+        { "chatId": 555, "isCompleteOrder": false, "aiError": true, "reply": "re:try again" }
+      ]
+    }
+  ]
+}

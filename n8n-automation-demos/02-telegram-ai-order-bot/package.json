@@ -1,0 +1,12 @@
+{
+  "name": "n8n-telegram-ai-orders-google-sheets",
+  "version": "1.0.0",
+  "description": "n8n template: Telegram bot with AI order taking that saves orders to Google Sheets",
+  "private": true,
+  "license": "MIT",
+  "scripts": {
+    "build": "node build.js",
+    "test": "node build.js && node validate.js"
+  },
+  "engines": { "node": ">=18" }
+}

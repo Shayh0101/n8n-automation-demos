@@ -1,0 +1,14 @@
+{
+  "name": "n8n-lead-capture-crm-followup",
+  "version": "1.0.0",
+  "description": "n8n template: lead capture webhook -> HubSpot / GoHighLevel / Airtable upsert -> personalised email follow-up",
+  "private": true,
+  "license": "MIT",
+  "scripts": {
+    "build": "node scripts/build-workflow.js",
+    "test": "node validate.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

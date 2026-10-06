@@ -1,0 +1,72 @@
+[
+  {
+    "group": "structure",
+    "name": "workflow.json is valid JSON",
+    "passed": true
+  },
+  {
+    "group": "structure",
+    "name": "settings.executionOrder = v1",
+    "passed": true
+  },
+  {
+    "group": "structure",
+    "name": "every node has name/type/typeVersion/position/parameters",
+    "passed": true
+  },
+  {
+    "group": "structure",
+    "name": "node names and ids are unique",
+    "passed": true
+  },
+  {
+    "group": "structure",
+    "name": "exactly one trigger",
+    "passed": true
+  },
+  {
+    "group": "structure",
+    "name": "connections reference existing nodes",
+    "passed": true
+  },
+  {
+    "group": "structure",
+    "name": "all nodes reachable from the trigger, no dead ends",
+    "passed": true
+  },
+  {
+    "group": "structure",
+    "name": "no credentials or secrets in the export",
+    "passed": true
+  },
+  {
+    "group": "structure",
+    "name": "has \"how to set up\" sticky notes",
+    "passed": true
+  },
+  {
+    "group": "structure",
+    "name": "Code nodes compile",
+    "passed": true
+  },
+  {
+    "group": "code-nodes.test.js",
+    "name": "Validate Request: accepts ingest/ask, rejects bad payloads with HTTP 400",
+    "passed": true
+  },
+  {
+    "group": "code-nodes.test.js",
+    "name": "Chunk Documents: bounded, overlapping chunks with deterministic UUIDs",
+    "passed": true
+  },
+  {
+    "group": "code-nodes.test.js",
+    "name": "Build Qdrant Points: maps embeddings by index (mocked OpenAI) and rejects mismatches",
+    "passed": true
+  },
+  {
+    "group": "code-nodes.test.js",
+    "name": "Ask flow: prompt from Qdrant hits (mocked) → cited answer; no-context path skips LLM",
+    "passed": true
+  }
+]

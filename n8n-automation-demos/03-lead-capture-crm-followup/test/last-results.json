@@ -1,0 +1,18 @@
+[
+  {
+    "name": "Workflow structure (unique names, valid connections, one trigger, no credentials)",
+    "passed": true
+  },
+  {
+    "name": "Normalize & Validate Lead: normalization, validation, CRM payloads (test/leads.json)",
+    "passed": true
+  },
+  {
+    "name": "Build Follow-up Email: CRM id extraction + safe HTML (test/emails.json, mocked CRM responses)",
+    "passed": true
+  },
+  {
+    "name": "End-to-end path simulation (webhook -> Switch routing -> mocked CRM -> email -> response)",
+    "passed": true
+  }
+]

@@ -1,0 +1,17 @@
+{
+  "action": "ingest",
+  "documents": [
+    {
+      "title": "Leave Policy",
+      "source": "https://wiki.example.com/hr/leave-policy",
+      "metadata": { "department": "HR" },
+      "text": "Annual leave. Every full-time employee receives 25 paid vacation days per calendar year. Part-time employees receive a pro-rated amount based on their contracted hours.\n\nCarry-over. Up to 5 unused vacation days can be carried over to the next year. Carried-over days expire on March 31st and cannot be paid out.\n\nRequesting leave. Submit leave requests in the HR portal at least two weeks in advance. Requests longer than 10 consecutive working days need approval from your department head.\n\nSick leave. Notify your manager before 10:00 on the first day of illness. A doctor's note is required from the third consecutive sick day onwards.\n\nParental leave. Employees with at least six months of service are entitled to 16 weeks of fully paid parental leave, which can be taken within the first year after birth or adoption."
+    },
+    {
+      "id": "it-security-101",
+      "title": "IT Security Basics",
+      "source": "https://wiki.example.com/it/security",
+      "text": "Passwords must be at least 14 characters long and are managed in the company password manager. Multi-factor authentication is mandatory for email, VPN and the HR portal. Report suspicious emails with the 'Report phishing' button in Outlook."
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+[
+  {
+    "name": "workflow structure: unique names, valid connections, single trigger, no secrets",
+    "passed": true
+  },
+  {
+    "name": "webhook verification: correct token echoes challenge, wrong token gets 403",
+    "passed": true
+  },
+  {
+    "name": "message parsing: text/button/image are extracted, reactions and status updates ignored",
+    "passed": true
+  },
+  {
+    "name": "AI request + reply (mocked Claude and OpenAI): correct bodies and WhatsApp payload",
+    "passed": true
+  },
+  {
+    "name": "error handling: failed/empty AI call sends fallback reply, long replies are truncated",
+    "passed": true
+  }
+]

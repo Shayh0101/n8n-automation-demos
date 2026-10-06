@@ -1,0 +1,14 @@
+{
+  "description": "Output of 'Extract PDF Text' for a text invoice and a scanned (empty) PDF, plus paired 'Download PDF' metadata.",
+  "download": [
+    { "id": "1AbCdEfG", "name": "ACME-INV-2041.pdf", "webViewLink": "https://drive.google.com/file/d/1AbCdEfG/view" },
+    { "id": "9ScAnNeD", "name": "scan_receipt.pdf", "webViewLink": "https://drive.google.com/file/d/9ScAnNeD/view" }
+  ],
+  "input": [
+    {
+      "text": "ACME Supplies Ltd.\r\nINVOICE   #INV-2041\n\n\n\nDate: 03/15/2026   Due: 04/14/2026\nBill to: Northwind LLC\n2 x Office chair    $250.00   $500.00\n10 x Paper box      $12.50    $125.00\nSubtotal $625.00\nTax (8%) $50.00\nTOTAL USD $675.00",
+      "numpages": 1
+    },
+    { "text": "  \n ", "numpages": 2 }
+  ]
+}

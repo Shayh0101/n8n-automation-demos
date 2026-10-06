@@ -1,0 +1,22 @@
+{
+  "name": "AI request body",
+  "node": "Build AI Request",
+  "cases": [
+    {
+      "name": "includes catalog, model, JSON mode and the saved draft",
+      "input": [{ "chatId": 111, "firstName": "John", "text": "my phone is +1 555 123 4567", "needsAi": true }],
+      "staticData": { "drafts": { "111": { "items": [{ "product": "Lemonade", "quantity": 2 }], "customerName": "John" } } },
+      "expect": [{
+        "chatId": 111,
+        "requestBody": {
+          "model": "gpt-4o-mini",
+          "response_format": { "type": "json_object" },
+          "messages": [
+            { "role": "system", "content": "re:Test Pizza.*prices in EUR.*Margherita Pizza.*9\\.5" },
+            { "role": "user", "content": "re:Current draft order: \\{.*Lemonade.*\\}.*John\\) says: my phone is" }
+          ]
+        }
+      }]
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+[
+  {
+    "name": "structure: valid n8n export (unique names, valid links, one trigger, no credentials)",
+    "passed": true
+  },
+  {
+    "name": "Clean & Normalize: trims text, parses US/EU prices, absolute URLs, dedupes, flags invalid",
+    "passed": true
+  },
+  {
+    "name": "Split Cards + Clean & Normalize: empty page produces an \"empty\" marker row",
+    "passed": true
+  },
+  {
+    "name": "Alerts: silent when healthy, warns on invalid ratio, critical on empty page / fetch error",
+    "passed": true
+  }
+]

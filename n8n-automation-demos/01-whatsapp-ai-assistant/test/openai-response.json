@@ -1,0 +1,6 @@
+{
+  "id": "chatcmpl-test",
+  "object": "chat.completion",
+  "model": "gpt-4o-mini",
+  "choices": [{ "index": 0, "message": { "role": "assistant", "content": "Hi Jane! Your order #1042 is on its way." }, "finish_reason": "stop" }]
+}

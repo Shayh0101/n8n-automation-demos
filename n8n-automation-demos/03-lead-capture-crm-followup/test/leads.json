@@ -1,0 +1,57 @@
+[
+  {
+    "name": "valid webhook lead (full name, messy email/phone, UTM in query) -> HubSpot",
+    "config": { "crmProvider": "hubspot" },
+    "input": {
+      "body": { "name": "jane  doe", "email": "  Jane.Doe@Example.COM ", "phone": "+1 (415) 555-0134", "company": "Doe Studio", "message": "Need a quote" },
+      "query": { "utm_source": "google", "utm_campaign": "spring" }
+    },
+    "expect": {
+      "valid": true,
+      "lead": { "firstName": "Jane", "lastName": "Doe", "email": "jane.doe@example.com", "phone": "+14155550134", "utm": { "source": "google", "medium": "", "campaign": "spring" } },
+      "crmBody": { "inputs": [{ "idProperty": "email", "id": "jane.doe@example.com", "properties": { "email": "jane.doe@example.com", "firstname": "Jane", "lastname": "Doe", "phone": "+14155550134", "company": "Doe Studio", "message": "Need a quote", "lifecyclestage": "lead" } }] }
+    }
+  },
+  {
+    "name": "flat payload with snake_case fields -> GoHighLevel",
+    "config": { "crmProvider": "GoHighLevel", "ghlLocationId": "loc_123" },
+    "input": { "first_name": "ivan", "last_name": "petrov", "email": "ivan@corp.io", "utm_source": "facebook" },
+    "expect": {
+      "valid": true,
+      "crmBody": { "locationId": "loc_123", "firstName": "Ivan", "lastName": "Petrov", "email": "ivan@corp.io", "source": "Website form", "tags": ["n8n-lead", "utm:facebook"] }
+    }
+  },
+  {
+    "name": "valid lead -> Airtable upsert body",
+    "config": { "crmProvider": "airtable" },
+    "input": { "body": { "firstName": "Ana", "email": "ana@shop.com", "source": "Pricing page" } },
+    "expect": {
+      "valid": true,
+      "crmBodyPath": { "performUpsert.fieldsToMergeOn.0": "Email", "records.0.fields.Email": "ana@shop.com", "records.0.fields.Source": "Pricing page" }
+    }
+  },
+  {
+    "name": "invalid email is rejected",
+    "config": { "crmProvider": "hubspot" },
+    "input": { "body": { "name": "Bob", "email": "bob@nowhere" } },
+    "expect": { "valid": false, "errors": ["email is invalid"], "crmBody": null }
+  },
+  {
+    "name": "missing email + bad phone",
+    "config": { "crmProvider": "hubspot" },
+    "input": { "body": { "name": "No Mail", "phone": "12-3" } },
+    "expect": { "valid": false, "errors": ["email is required", "phone is invalid"] }
+  },
+  {
+    "name": "honeypot filled -> spam",
+    "config": { "crmProvider": "hubspot" },
+    "input": { "body": { "name": "Bot", "email": "bot@spam.com", "website_url": "http://spam.example" } },
+    "expect": { "valid": false, "errors": ["spam detected"] }
+  },
+  {
+    "name": "unknown CRM provider in Config",
+    "config": { "crmProvider": "salesforce" },
+    "input": { "body": { "email": "x@y.com" } },
+    "expect": { "valid": false, "errors": ["unsupported crmProvider \"salesforce\" (use: hubspot, gohighlevel, airtable)"] }
+  }
+]

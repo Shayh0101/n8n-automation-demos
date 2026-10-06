@@ -1,0 +1,31 @@
+{
+  "name": "Telegram update normalization & commands",
+  "node": "Normalize Message",
+  "cases": [
+    {
+      "name": "plain text goes to AI",
+      "input": [{ "message": { "message_id": 1, "date": 1760000000, "chat": { "id": 111, "type": "private" }, "from": { "id": 111, "first_name": "John", "username": "john_d" }, "text": "  2 margherita please  " } }],
+      "expect": [{ "chatId": 111, "username": "john_d", "firstName": "John", "text": "2 margherita please", "needsAi": true, "reply": "$absent" }]
+    },
+    {
+      "name": "/start replies with welcome + menu, no AI call",
+      "input": [{ "message": { "chat": { "id": 111 }, "from": { "id": 111, "first_name": "John" }, "text": "/start" } }],
+      "expect": [{ "needsAi": false, "reply": "re:Hi John!.*Test Pizza.*Margherita Pizza — 9\\.50 EUR.*Lemonade — 3\\.00 EUR" }]
+    },
+    {
+      "name": "/cancel clears only this chat's draft",
+      "input": [{ "message": { "chat": { "id": 111 }, "from": { "id": 111 }, "text": "/cancel@TestBot" } }],
+      "staticData": { "drafts": { "111": { "items": [] }, "222": { "items": [] } } },
+      "expect": [{ "needsAi": false, "reply": "re:cleared" }],
+      "expectStaticData": { "drafts": { "111": "$absent", "222": { "items": [] } } }
+    },
+    {
+      "name": "sticker gets a text-only reply; updates without chat are ignored",
+      "input": [
+        { "message": { "chat": { "id": 333 }, "from": { "id": 333 }, "sticker": { "file_id": "x" } } },
+        { "update_id": 5 }
+      ],
+      "expect": [{ "chatId": 333, "needsAi": false, "reply": "re:only read text" }]
+    }
+  ]
+}

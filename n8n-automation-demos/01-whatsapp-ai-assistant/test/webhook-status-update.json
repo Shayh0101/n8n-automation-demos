@@ -1,0 +1,19 @@
+{
+  "headers": {},
+  "params": {},
+  "query": {},
+  "body": {
+    "object": "whatsapp_business_account",
+    "entry": [{
+      "id": "WABA_ID_TEST",
+      "changes": [{
+        "field": "messages",
+        "value": {
+          "messaging_product": "whatsapp",
+          "metadata": { "display_phone_number": "15550000000", "phone_number_id": "PHONE_NUMBER_ID_TEST" },
+          "statuses": [{ "id": "wamid.OUT1", "status": "delivered", "timestamp": "1730000005", "recipient_id": "15551234567" }]
+        }
+      }]
+    }]
+  }
+}

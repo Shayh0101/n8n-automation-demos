@@ -1,0 +1,631 @@
+{
+  "name": "Web Scraping -> Cleaned Data -> Sheets/DB with Alerts",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Web scraping -> cleaned data -> Sheets/DB + alerts\n\nEvery 6 h this workflow fetches a listing page, extracts each product card, cleans & validates the fields, upserts valid rows into Google Sheets (and optionally Postgres) and posts a Slack alert when something looks wrong.\n\n### Setup (5 min)\n1. Open **Config** and set `target_url`, CSS selectors, `sheet_id`, `slack_channel`.\n2. **Upsert to Google Sheets** -> add a Google Sheets OAuth2 credential. Sheet tab `listings` with header row:\n`id | title | price | currency | url | availability | source | scraped_at | status | issues`\n3. **Send Slack Alert** -> add a Slack credential (bot token, `chat:write`).\n4. (Optional) Enable **Upsert to Postgres** and add a Postgres credential (see `schema.sql`).\n5. Click *Execute workflow* once, check the sheet, then Activate.\n\nDefault target is the public scraping sandbox books.toscrape.com, so it works out of the box.",
+        "height": 560,
+        "width": 520,
+        "color": 7
+      },
+      "id": "a1b2c3d4-0000-4000-8000-000000000001",
+      "name": "Note: Overview",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -660,
+        -420
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### 1. Config\nAll site-specific settings live here: URL, CSS selectors, Sheet ID, Slack channel, alert threshold. No other node needs editing to point the template at a new site.",
+        "height": 220,
+        "width": 300,
+        "color": 5
+      },
+      "id": "a1b2c3d4-0000-4000-8000-000000000002",
+      "name": "Note: Config",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -120,
+        -260
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### 2. Fetch\nGET with a browser User-Agent, 30 s timeout, 3 retries. If it still fails, the **error output** goes to the alert branch instead of crashing the run.\nRespect robots.txt and the site ToS.",
+        "height": 220,
+        "width": 300,
+        "color": 5
+      },
+      "id": "a1b2c3d4-0000-4000-8000-000000000003",
+      "name": "Note: Fetch",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        220,
+        -260
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### 3. Extract & clean\nCards are split into items, fields extracted per card (robust to missing fields), then **Clean & Normalize** trims text, parses US/EU prices + currency, makes URLs absolute, dedupes, and marks bad rows `status=invalid` with a reason.",
+        "height": 220,
+        "width": 420,
+        "color": 5
+      },
+      "id": "a1b2c3d4-0000-4000-8000-000000000004",
+      "name": "Note: Clean",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        700,
+        -260
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### 4. Store\nOnly `status=ok` rows are upserted, keyed by `id` (canonical URL), so re-runs update prices instead of creating duplicates.",
+        "height": 200,
+        "width": 320,
+        "color": 4
+      },
+      "id": "a1b2c3d4-0000-4000-8000-000000000005",
+      "name": "Note: Store",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1340,
+        -420
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### 5. Alerts\nSlack is pinged only when: the fetch failed, the page returned no listings (selectors broke), or the invalid-row ratio exceeds `max_invalid_ratio`. Healthy runs stay silent.",
+        "height": 200,
+        "width": 320,
+        "color": 3
+      },
+      "id": "a1b2c3d4-0000-4000-8000-000000000006",
+      "name": "Note: Alerts",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1340,
+        360
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 6
+            }
+          ]
+        }
+      },
+      "id": "a1b2c3d4-0000-4000-8000-000000000007",
+      "name": "Every 6 Hours",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -100,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a1b2c3d4-0000-4000-8000-000000000008",
+              "name": "target_url",
+              "value": "https://books.toscrape.com/catalogue/page-1.html",
+              "type": "string"
+            },
+            {
+              "id": "a1b2c3d4-0000-4000-8000-000000000009",
+              "name": "source_name",
+              "value": "books.toscrape.com",
+              "type": "string"
+            },
+            {
+              "id": "a1b2c3d4-0000-4000-8000-000000000010",
+              "name": "sel_card",
+              "value": "article.product_pod",
+              "type": "string"
+            },
+            {
+              "id": "a1b2c3d4-0000-4000-8000-000000000011",
+              "name": "sel_title",
+              "value": "h3 a",
+              "type": "string"
+            },
+            {
+              "id": "a1b2c3d4-0000-4000-8000-000000000012",
+              "name": "sel_price",
+              "value": ".price_color",
+              "type": "string"
+            },
+            {
+              "id": "a1b2c3d4-0000-4000-8000-000000000013",
+              "name": "sel_link",
+              "value": "h3 a",
+              "type": "string"
+            },
+            {
+              "id": "a1b2c3d4-0000-4000-8000-000000000014",
+              "name": "sel_availability",
+              "value": ".availability",
+              "type": "string"
+            },
+            {
+              "id": "a1b2c3d4-0000-4000-8000-000000000015",
+              "name": "default_currency",
+              "value": "USD",
+              "type": "string"
+            },
+            {
+              "id": "a1b2c3d4-0000-4000-8000-000000000016",
+              "name": "max_invalid_ratio",
+              "value": 0.2,
+              "type": "number"
+            },
+            {
+              "id": "a1b2c3d4-0000-4000-8000-000000000017",
+              "name": "sheet_id",
+              "value": "YOUR_GOOGLE_SHEET_ID",
+              "type": "string"
+            },
+            {
+              "id": "a1b2c3d4-0000-4000-8000-000000000018",
+              "name": "slack_channel",
+              "value": "YOUR_SLACK_CHANNEL_ID",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a1b2c3d4-0000-4000-8000-000000000019",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        120,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.target_url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0 (compatible; n8n-scraper/1.0)"
+            },
+            {
+              "name": "Accept",
+              "value": "text/html,application/xhtml+xml"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "text",
+              "outputPropertyName": "data"
+            }
+          },
+          "timeout": 30000
+        }
+      },
+      "id": "a1b2c3d4-0000-4000-8000-000000000020",
+      "name": "Fetch Page",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        340,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "operation": "extractHtmlContent",
+        "dataPropertyName": "data",
+        "extractionValues": {
+          "values": [
+            {
+              "key": "cards",
+              "cssSelector": "={{ $('Config').first().json.sel_card }}",
+              "returnValue": "html",
+              "returnArray": true
+            }
+          ]
+        },
+        "options": {
+          "trimValues": true
+        }
+      },
+      "id": "a1b2c3d4-0000-4000-8000-000000000021",
+      "name": "Extract Cards",
+      "type": "n8n-nodes-base.html",
+      "typeVersion": 1.2,
+      "position": [
+        580,
+        -80
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Turns the array of product-card HTML snippets into one item per card.\n// If the page had no cards (selector broken / layout changed) we still emit a\n// single marker item so the downstream alert branch can fire.\nconst cards = $input.first().json.cards;\nconst list = Array.isArray(cards) ? cards : (cards ? [cards] : []);\n\nif (list.length === 0) {\n  return [{ json: { cards: '', empty_page: true } }];\n}\n\nreturn list.map((html) => ({ json: { cards: String(html) } }));\n"
+      },
+      "id": "a1b2c3d4-0000-4000-8000-000000000022",
+      "name": "Split Cards",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        800,
+        -80
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "extractHtmlContent",
+        "dataPropertyName": "cards",
+        "extractionValues": {
+          "values": [
+            {
+              "key": "title_attr",
+              "cssSelector": "={{ $('Config').first().json.sel_title }}",
+              "returnValue": "attribute",
+              "attribute": "title"
+            },
+            {
+              "key": "title_text",
+              "cssSelector": "={{ $('Config').first().json.sel_title }}",
+              "returnValue": "text"
+            },
+            {
+              "key": "price",
+              "cssSelector": "={{ $('Config').first().json.sel_price }}",
+              "returnValue": "text"
+            },
+            {
+              "key": "url",
+              "cssSelector": "={{ $('Config').first().json.sel_link }}",
+              "returnValue": "attribute",
+              "attribute": "href"
+            },
+            {
+              "key": "availability",
+              "cssSelector": "={{ $('Config').first().json.sel_availability }}",
+              "returnValue": "text"
+            }
+          ]
+        },
+        "options": {
+          "trimValues": true,
+          "cleanUpText": true
+        }
+      },
+      "id": "a1b2c3d4-0000-4000-8000-000000000023",
+      "name": "Extract Fields",
+      "type": "n8n-nodes-base.html",
+      "typeVersion": 1.2,
+      "position": [
+        1020,
+        -80
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Cleans raw scraped fields into a stable, typed row schema:\n//   id, title, price, currency, url, availability, source, scraped_at, status, issues\n// - collapses whitespace, strips junk characters\n// - parses prices in US (\"1,299.00\") and EU (\"1.299,00\") formats\n// - resolves relative links against the target URL\n// - de-duplicates by id (canonical URL) within the run\n// - flags rows that fail validation (status = \"invalid\") instead of dropping them\nconst cfg = $('Config').first().json;\nconst baseUrl = cfg.target_url;\nconst scrapedAt = new Date().toISOString();\n\nconst CURRENCY_SYMBOLS = { '$': 'USD', '€': 'EUR', '£': 'GBP', '¥': 'JPY', '₹': 'INR' };\n\nconst clean = (v) => String(v ?? '').replace(/[\\u0000-\\u001F \\s]+/g, ' ').trim();\n\nfunction parsePrice(raw) {\n  const text = clean(raw);\n  if (!text) return { price: null, currency: null };\n\n  let currency = null;\n  for (const [sym, code] of Object.entries(CURRENCY_SYMBOLS)) {\n    if (text.includes(sym)) { currency = code; break; }\n  }\n  const iso = text.match(/\\b(USD|EUR|GBP|JPY|INR|CAD|AUD)\\b/i);\n  if (!currency && iso) currency = iso[1].toUpperCase();\n\n  let n = text.replace(/[^\\d.,-]/g, '');\n  if (!/\\d/.test(n)) return { price: null, currency };\n\n  const lastComma = n.lastIndexOf(',');\n  const lastDot = n.lastIndexOf('.');\n  if (lastComma > -1 && lastDot > -1) {\n    // Whichever separator comes last is the decimal separator.\n    n = lastComma > lastDot ? n.replace(/\\./g, '').replace(',', '.') : n.replace(/,/g, '');\n  } else if (lastComma > -1) {\n    n = /,\\d{1,2}$/.test(n) ? n.replace(/\\./g, '').replace(',', '.') : n.replace(/,/g, '');\n  } else if (/^\\d{1,3}(\\.\\d{3})+$/.test(n)) {\n    n = n.replace(/\\./g, ''); // \"1.299\" -> thousands separator\n  }\n\n  const price = Number.parseFloat(n);\n  return { price: Number.isFinite(price) ? Math.round(price * 100) / 100 : null, currency };\n}\n\nfunction absoluteUrl(href) {\n  const h = clean(href);\n  if (!h) return '';\n  try {\n    const u = new URL(h, baseUrl);\n    u.hash = '';\n    return u.href;\n  } catch (e) {\n    return '';\n  }\n}\n\nconst seen = new Set();\nconst rows = [];\n\nfor (const item of $input.all()) {\n  const j = item.json || {};\n  const title = clean(j.title_attr) || clean(j.title_text);\n  const url = absoluteUrl(j.url);\n  const { price, currency } = parsePrice(j.price);\n  const availability = clean(j.availability);\n\n  // Completely blank card (e.g. empty-page marker or ad slot) -> skip.\n  if (!title && !url && price === null) continue;\n\n  const id = url || title.toLowerCase();\n  if (seen.has(id)) continue;\n  seen.add(id);\n\n  const issues = [];\n  if (!title) issues.push('missing title');\n  if (!url) issues.push('missing/invalid url');\n  if (price === null) issues.push('unparseable price');\n  else if (price <= 0) issues.push('non-positive price');\n\n  rows.push({\n    json: {\n      id,\n      title,\n      price,\n      currency: currency || cfg.default_currency || '',\n      url,\n      availability,\n      source: cfg.source_name || '',\n      scraped_at: scrapedAt,\n      status: issues.length ? 'invalid' : 'ok',\n      issues: issues.join('; '),\n    },\n  });\n}\n\nif (rows.length === 0) {\n  return [{ json: { status: 'empty', issues: 'No listings extracted - check CSS selectors / target page', scraped_at: scrapedAt } }];\n}\n\nreturn rows;\n"
+      },
+      "id": "a1b2c3d4-0000-4000-8000-000000000024",
+      "name": "Clean & Normalize",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1240,
+        -80
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "a1b2c3d4-0000-4000-8000-000000000025",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "ok",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a1b2c3d4-0000-4000-8000-000000000026",
+      "name": "Keep Valid Rows",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.2,
+      "position": [
+        1460,
+        -180
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $('Config').first().json.sheet_id }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "listings",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "a1b2c3d4-0000-4000-8000-000000000027",
+      "name": "Upsert to Google Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1700,
+        -260
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "upsert",
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list",
+          "cachedResultName": "public"
+        },
+        "table": {
+          "__rl": true,
+          "value": "listings",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "a1b2c3d4-0000-4000-8000-000000000028",
+      "name": "Upsert to Postgres",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1700,
+        -80
+      ],
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Decides whether this run needs a human to look at it.\n// Emits ONE alert item when the page was empty or the invalid-row ratio is above\n// the threshold; emits NOTHING when the run is healthy (so Slack is not called).\nconst cfg = $('Config').first().json;\nconst threshold = Number(cfg.max_invalid_ratio ?? 0.2);\nconst rows = $input.all().map((i) => i.json);\n\nconst empty = rows.some((r) => r.status === 'empty');\nconst data = rows.filter((r) => r.status === 'ok' || r.status === 'invalid');\nconst invalid = data.filter((r) => r.status === 'invalid');\nconst ratio = data.length ? invalid.length / data.length : 1;\n\nif (!empty && ratio <= threshold) {\n  return [];\n}\n\nconst header = `:warning: *Scraper alert* - ${cfg.source_name || 'source'} (${cfg.target_url})`;\nlet body;\nif (empty) {\n  body = 'No listings were extracted. The page layout or CSS selectors probably changed.';\n} else {\n  const examples = invalid\n    .slice(0, 5)\n    .map((r) => `- ${r.title || r.url || '(no title)'}: ${r.issues}`)\n    .join('\\n');\n  body = `${invalid.length}/${data.length} rows failed validation ` +\n    `(${Math.round(ratio * 100)}% > ${Math.round(threshold * 100)}% threshold). ` +\n    `Valid rows were still saved.\\n${examples}`;\n}\n\nreturn [{\n  json: {\n    severity: empty ? 'critical' : 'warning',\n    total_rows: data.length,\n    invalid_rows: invalid.length,\n    message: `${header}\\n${body}`,\n  },\n}];\n"
+      },
+      "id": "a1b2c3d4-0000-4000-8000-000000000029",
+      "name": "Build Data Alert",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1460,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Runs on the HTTP Request error output (after all retries failed).\n// Converts the n8n error payload into a readable Slack message.\nconst cfg = $('Config').first().json;\nconst err = $input.first().json.error || $input.first().json;\nconst msg = typeof err === 'string'\n  ? err\n  : (err.message || err.description || JSON.stringify(err).slice(0, 300));\nconst code = err.httpCode || err.status || err.code || 'n/a';\n\nreturn [{\n  json: {\n    severity: 'critical',\n    message: `:rotating_light: *Scraper fetch failed* - ${cfg.source_name || 'source'}\\n` +\n      `URL: ${cfg.target_url}\\nStatus: ${code}\\nError: ${msg}`,\n  },\n}];\n"
+      },
+      "id": "a1b2c3d4-0000-4000-8000-000000000030",
+      "name": "Format Fetch Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        580,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "={{ $('Config').first().json.slack_channel }}",
+          "mode": "id"
+        },
+        "text": "={{ $json.message }}",
+        "otherOptions": {}
+      },
+      "id": "a1b2c3d4-0000-4000-8000-000000000031",
+      "name": "Send Slack Alert",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [
+        1700,
+        160
+      ]
+    }
+  ],
+  "connections": {
+    "Every 6 Hours": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Fetch Page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Page": {
+      "main": [
+        [
+          {
+            "node": "Extract Cards",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Format Fetch Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Cards": {
+      "main": [
+        [
+          {
+            "node": "Split Cards",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Cards": {
+      "main": [
+        [
+          {
+            "node": "Extract Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Fields": {
+      "main": [
+        [
+          {
+            "node": "Clean & Normalize",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clean & Normalize": {
+      "main": [
+        [
+          {
+            "node": "Keep Valid Rows",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Build Data Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Keep Valid Rows": {
+      "main": [
+        [
+          {
+            "node": "Upsert to Google Sheets",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Upsert to Postgres",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Data Alert": {
+      "main": [
+        [
+          {
+            "node": "Send Slack Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Fetch Error": {
+      "main": [
+        [
+          {
+            "node": "Send Slack Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "timezone": "UTC"
+  },
+  "tags": [],
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}
